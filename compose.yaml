@@ -1,0 +1,20 @@
+# Yangstagram 개발용 서비스
+# 백엔드를 실행하면(Spring Boot Docker Compose 지원) 자동으로 올라온다.
+# 직접 띄우려면: docker compose up -d
+#
+# 5432 포트는 다른 프로젝트가 쓰고 있어서 5433을 쓴다.
+services:
+  postgres:
+    image: postgres:18
+    container_name: yangstagram-postgres
+    environment:
+      POSTGRES_DB: yangstagram
+      POSTGRES_USER: yangstagram
+      POSTGRES_PASSWORD: yangstagram
+    ports:
+      - "5433:5432"
+    volumes:
+      - yangstagram-pgdata:/var/lib/postgresql
+
+volumes:
+  yangstagram-pgdata:

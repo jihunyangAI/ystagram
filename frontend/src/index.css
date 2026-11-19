@@ -1,0 +1,126 @@
+@import 'tailwindcss';
+
+/*
+ * 디자인 토큰. 인스타그램의 그라데이션 대신 단색 포인트 컬러(딥 그린)를 쓴다.
+ * 다크 모드는 시스템 설정을 따른다.
+ */
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f4f5f4;
+  --text: #111513;
+  --muted: #6b726f;
+  --border: #e3e6e4;
+  --primary: #1f8a70;
+  --primary-hover: #187259;
+  --primary-soft: #e3f3ee;
+  --danger: #d6455d;
+  --ring-unseen: #1f8a70;
+  --banner: #fff7e0;
+  --banner-text: #6b5300;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0d0c;
+    --surface: #121614;
+    --surface-2: #1b201e;
+    --text: #eef1ef;
+    --muted: #9aa39f;
+    --border: #262c29;
+    --primary: #3cc39c;
+    --primary-hover: #5ad3b0;
+    --primary-soft: #13312a;
+    --danger: #ff6b81;
+    --ring-unseen: #3cc39c;
+    --banner: #2b2510;
+    --banner-text: #f3d77a;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-danger: var(--danger);
+  --color-banner: var(--banner);
+  --color-banner-text: var(--banner-text);
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo',
+    'Malgun Gothic', sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+}
+
+/* 공통 컴포넌트 클래스: components 레이어에 둬야 Tailwind 유틸리티(pl-9 등)로 덮어쓸 수 있다 */
+@layer components {
+  /* 입력창 공통 */
+  .input {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    border-radius: 6px;
+    padding: 9px 10px;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+  }
+  .input:focus {
+    border-color: var(--muted);
+  }
+
+  /* 버튼 공통 */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+  }
+  .btn-primary:not(:disabled):hover {
+    background: var(--primary-hover);
+  }
+  .btn-secondary {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .btn-secondary:not(:disabled):hover {
+    background: var(--border);
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

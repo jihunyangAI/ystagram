@@ -1,0 +1,24 @@
+# 실행 중 생성되는 데이터
+/storage/
+/data/
+
+# 가짜 데이터용 사진 (스크립트와 출처만 커밋)
+/seed-media/**/*.jpg
+/seed-media/**/*.jpeg
+/seed-media/**/*.png
+/seed-media/**/*.webp
+/seed-media/**/*.mp4
+
+# 편집기
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# 비밀 정보
+.env
+.env.*
+!.env.example
+
+# 브라우저 자동화 테스트 산출물
+/.playwright-mcp/
