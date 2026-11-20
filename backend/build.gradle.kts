@@ -46,4 +46,10 @@ dependencies {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	maxHeapSize = "512m"
+}
+
+// 같은 PC에서 다른 프로젝트(yangpang 배포 서버)도 돌아가므로 메모리를 작게 잡는다
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+	jvmArgs("-Xms128m", "-Xmx384m", "-XX:+UseSerialGC")
 }
