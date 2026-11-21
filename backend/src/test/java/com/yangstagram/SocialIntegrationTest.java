@@ -37,7 +37,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** M2: 팔로우 요청, 알림 묶음, 댓글 답글·수정·고정, 저장·컬렉션, 리포스트, 검색, DM, 스토리, 시간 가속 */
-@SpringBootTest(properties = "yangstagram.media.storage-dir=build/test-storage")
+@SpringBootTest(properties = {"yangstagram.media.storage-dir=build/test-storage", "yangstagram.seed.size=small"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class SocialIntegrationTest {

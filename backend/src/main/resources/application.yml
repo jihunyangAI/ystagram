@@ -34,7 +34,7 @@ yangstagram:
   # 가짜 데이터: DB가 비어 있으면 시작할 때 자동 생성
   seed:
     on-startup-if-empty: true
-    size: small
+    size: medium   # M2부터 medium (사용자 200명, 약 20초)
     value: 42
     # 모든 가짜 계정의 비밀번호 (연구용)
     fake-password: yang1234

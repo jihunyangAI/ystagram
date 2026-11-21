@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft } from 'lucide-react'
 import { Avatar } from '../../components/Avatar'
+import { Toggle } from '../../components/post/CaptionField'
 import { Modal, SheetButton } from '../../components/Modal'
 import { toast } from '../../components/Toast'
 import { api, ApiError } from '../../lib/api'
@@ -153,6 +154,8 @@ export function EditProfilePage() {
         </div>
       </form>
 
+      <PrivacySection />
+
       <Modal open={photoMenu} onClose={() => setPhotoMenu(false)} bare title="프로필 사진 바꾸기">
         <p className="border-b border-border py-6 text-center text-lg font-semibold">프로필 사진 바꾸기</p>
         <SheetButton
@@ -189,6 +192,53 @@ export function EditProfilePage() {
         }}
       />
     </div>
+  )
+}
+
+/** 계정 공개 범위 (분석 문서 §13). 공개로 바꾸면 대기 중인 팔로우 요청이 모두 승인된다 */
+function PrivacySection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['privacy'], queryFn: () => api.get<{ isPrivate: boolean }>('/api/me/privacy') })
+  const [confirm, setConfirm] = useState<boolean | null>(null)
+  const save = useMutation({
+    mutationFn: (isPrivate: boolean) => api.put<{ isPrivate: boolean }>('/api/me/privacy', { isPrivate }),
+    onSuccess: (r) => {
+      qc.setQueryData(['privacy'], r)
+      qc.invalidateQueries({ queryKey: ME_KEY })
+      qc.invalidateQueries({ queryKey: ['profile'] })
+      qc.invalidateQueries({ queryKey: ['notif-unread'] })
+      toast(r.isPrivate ? '비공개 계정으로 바꿨습니다' : '공개 계정으로 바꿨습니다')
+      setConfirm(null)
+    },
+    onError: (e) => toast(e.message),
+  })
+  if (!data) return null
+  return (
+    <section className="mt-10 border-t border-border pt-6">
+      <h2 className="mb-4 text-lg font-bold">계정 공개 범위</h2>
+      <Toggle
+        checked={data.isPrivate}
+        onChange={(v) => setConfirm(v)}
+        label="비공개 계정"
+        help="비공개 계정이면 회원님이 승인한 팔로워만 사진과 동영상을 볼 수 있습니다. 공개로 바꾸면 대기 중인 요청이 모두 승인됩니다."
+      />
+      <Modal open={confirm !== null} onClose={() => setConfirm(null)} title={confirm ? '비공개 계정으로 전환할까요?' : '공개 계정으로 전환할까요?'}>
+        <div className="space-y-3 p-5 text-sm">
+          <p className="text-muted">
+            {confirm
+              ? '승인한 팔로워만 회원님의 사진과 동영상을 볼 수 있습니다. 기존 팔로워에게는 영향이 없습니다.'
+              : '누구나 회원님의 사진과 동영상을 볼 수 있게 됩니다. 대기 중인 팔로우 요청이 모두 승인됩니다.'}
+          </p>
+          <button
+            className="btn btn-primary w-full"
+            disabled={save.isPending}
+            onClick={() => confirm !== null && save.mutate(confirm)}
+          >
+            {confirm ? '비공개로 전환' : '공개로 전환'}
+          </button>
+        </div>
+      </Modal>
+    </section>
   )
 }
 

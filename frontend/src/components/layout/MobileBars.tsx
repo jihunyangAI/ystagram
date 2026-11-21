@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import type { Me } from '../../lib/types'
 import { Avatar } from '../Avatar'
 import { Logo } from '../Logo'
+import { DmBadge, NotificationDot } from './Badges'
 import { BOTTOM_ITEMS } from './nav'
 
 /** 모바일 상단 바: 만들기(+) · 로고 · 알림 (홈 화면에서만 표시) */
@@ -18,8 +19,9 @@ export function MobileTopBar() {
       <Link to="/" aria-label="홈">
         <Logo />
       </Link>
-      <Link to="/notifications" aria-label="알림" className="p-1">
+      <Link to="/notifications" aria-label="알림" className="relative p-1">
         <Heart size={26} strokeWidth={1.8} />
+        <NotificationDot className="top-1 right-1" />
       </Link>
     </header>
   )
@@ -31,7 +33,12 @@ export function BottomNav({ me }: { me: Me }) {
     <nav className="fixed inset-x-0 bottom-0 z-30 flex h-[50px] items-center justify-around border-t border-border bg-bg pb-[env(safe-area-inset-bottom)] md:hidden">
       {BOTTOM_ITEMS.map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} end aria-label={label} className="flex flex-1 justify-center py-2">
-          {({ isActive }) => <Icon size={26} strokeWidth={isActive ? 2.6 : 1.8} />}
+          {({ isActive }) => (
+            <span className="relative">
+              <Icon size={26} strokeWidth={isActive ? 2.6 : 1.8} />
+              {to === '/direct/inbox' && <DmBadge className="-top-1.5 -right-2.5" />}
+            </span>
+          )}
         </NavLink>
       ))}
       <NavLink to={`/${me.user.username}`} aria-label="프로필" className="flex flex-1 justify-center py-2">

@@ -1,24 +1,46 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { FlaskConical, RefreshCw, Search } from 'lucide-react'
+import { Clock, FlaskConical, RefreshCw, Search } from 'lucide-react'
 import { LabUserList } from '../components/lab/LabUserList'
 import { toast } from '../components/Toast'
 import { api } from '../lib/api'
 import { useSetSession } from '../lib/auth'
+import { setClockOffset } from '../lib/clock'
+import { useRealtimeConnected } from '../lib/realtime'
 import type { LabStatus, SeedResult, SeedSize } from '../lib/types'
 
 const SIZES: { value: SeedSize; label: string }[] = [
-  { value: 'SMALL', label: 'small · 사용자 50명 (MVP)' },
+  { value: 'SMALL', label: 'small · 사용자 50명' },
   { value: 'MEDIUM', label: 'medium · 사용자 200명' },
   { value: 'LARGE', label: 'large · 사용자 500명' },
 ]
 
-/** 연구 도구 화면: 데이터 현황, 시드 재생성, 계정 전환 */
+const CLOCK_STEPS: { label: string; minutes: number; hint?: string }[] = [
+  { label: '+16분', minutes: 16, hint: '댓글·DM 15분 수정 제한' },
+  { label: '+1시간', minutes: 60 },
+  { label: '+6시간', minutes: 360 },
+  { label: '+25시간', minutes: 1500, hint: '스토리 24시간 만료' },
+]
+
+/** 시간이 지나면 달라지는 화면들: 시계를 움직이면 새로 받는다 */
+const TIME_DEPENDENT = ['lab-status', 'lab-clock', 'story-tray', 'stories', 'story-archive', 'feed', 'post', 'comments', 'replies', 'messages', 'profile', 'activity']
+
+function formatOffset(minutes: number): string {
+  const d = Math.floor(minutes / 1440)
+  const h = Math.floor((minutes % 1440) / 60)
+  const m = minutes % 60
+  const parts = [d ? `${d}일` : '', h ? `${h}시간` : '', m ? `${m}분` : ''].filter(Boolean)
+  return parts.join(' ') || '0분'
+}
+
+/** 연구 도구 화면: 데이터 현황, 시간 가속, 시드 재생성, 계정 전환 */
 export function LabPage() {
   const navigate = useNavigate()
   const setSession = useSetSession()
-  const [size, setSize] = useState<SeedSize>('SMALL')
+  const qc = useQueryClient()
+  const realtime = useRealtimeConnected()
+  const [size, setSize] = useState<SeedSize>('MEDIUM')
   const [seed, setSeed] = useState('42')
   const [query, setQuery] = useState('')
 
@@ -27,9 +49,23 @@ export function LabPage() {
   const reseed = useMutation({
     mutationFn: () => api.post<SeedResult>('/api/lab/seed', { size, seed: Number(seed) }),
     onSuccess: (r) => {
-      toast(`사용자 ${r.users}명, 게시물 ${r.posts}개, 좋아요 ${r.likes}개를 만들었습니다 (${r.elapsedMillis}ms). 다시 로그인하세요.`)
+      toast(
+        `사용자 ${r.users}명, 게시물 ${r.posts}개, 스토리 ${r.stories}개, 메시지 ${r.messages}개를 만들었습니다 (${(r.elapsedMillis / 1000).toFixed(1)}초). 다시 로그인하세요.`,
+      )
       setSession(null)
       navigate('/accounts/login')
+    },
+    onError: (e) => toast(e.message),
+  })
+
+  // 시간 가속: 서버의 가상 시계를 앞으로. 화면의 "N분 전" 표시도 같은 시계를 쓴다
+  const clock = useMutation({
+    mutationFn: (body: { addMinutes?: number; reset?: boolean }) =>
+      api.post<{ now: string; offsetMinutes: number }>('/api/lab/clock', body),
+    onSuccess: (r) => {
+      setClockOffset(r.offsetMinutes)
+      toast(r.offsetMinutes === 0 ? '실제 시간으로 되돌렸습니다' : `가상 시계: +${formatOffset(r.offsetMinutes)}`)
+      TIME_DEPENDENT.forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
     },
     onError: (e) => toast(e.message),
   })
@@ -47,7 +83,9 @@ export function LabPage() {
         { label: '팔로우', value: s.follows, sub: `승인 대기 ${s.pendingFollows}개` },
         { label: '게시물', value: s.posts, sub: `해시태그 ${s.hashtags}개` },
         { label: '좋아요 · 댓글', value: s.likes, sub: `댓글 ${s.comments.toLocaleString('ko-KR')}개` },
-        { label: '가상 시계', value: s.clockOffsetMinutes === 0 ? '실제 시간' : `+${s.clockOffsetMinutes}분`, sub: new Date(s.now).toLocaleString('ko-KR') },
+        { label: '활성 스토리', value: s.activeStories, sub: '24시간 안에 올린 것' },
+        { label: 'DM 메시지', value: s.messages, sub: `대화방 ${s.conversations.toLocaleString('ko-KR')}개` },
+        { label: '알림', value: s.notifications, sub: realtime ? '실시간 연결됨 🟢' : '실시간 연결 안 됨' },
         { label: '가짜 계정 비밀번호', value: s.fakePassword, sub: '모든 가짜 계정 공통' },
       ]
     : []
@@ -73,6 +111,41 @@ export function LabPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section aria-labelledby="lab-clock" className="rounded-xl border border-border p-5">
+        <h2 id="lab-clock" className="flex items-center gap-2 font-semibold">
+          <Clock size={18} /> 시간 가속
+        </h2>
+        <p className="mt-1 text-sm text-muted">
+          서버의 가상 시계를 앞으로 돌려 시간 규칙을 바로 확인합니다. 지금:{' '}
+          <b className="text-text">{s ? new Date(s.now).toLocaleString('ko-KR') : '…'}</b>
+          {s && s.clockOffsetMinutes !== 0 && <span className="text-primary"> (+{formatOffset(s.clockOffsetMinutes)})</span>}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {CLOCK_STEPS.map((c) => (
+            <button
+              key={c.label}
+              className="btn btn-secondary flex-col items-start gap-0 py-2"
+              disabled={clock.isPending}
+              onClick={() => clock.mutate({ addMinutes: c.minutes })}
+            >
+              <span>{c.label}</span>
+              {c.hint && <span className="text-[11px] font-normal text-muted">{c.hint}</span>}
+            </button>
+          ))}
+          <button
+            className="btn btn-secondary"
+            disabled={clock.isPending || s?.clockOffsetMinutes === 0}
+            onClick={() => clock.mutate({ reset: true })}
+          >
+            실제 시간으로
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          되돌리면 앞당긴 시간에 만든 글·메시지는 "미래"가 되어 잠시 목록에서 빠질 수 있습니다. 서버를 다시 시작하면 실제 시간으로
+          돌아갑니다.
+        </p>
       </section>
 
       <section aria-labelledby="lab-seed" className="rounded-xl border border-border p-5">

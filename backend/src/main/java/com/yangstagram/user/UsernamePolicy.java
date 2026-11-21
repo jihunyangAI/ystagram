@@ -18,7 +18,7 @@ public final class UsernamePolicy {
     private static final Set<String> RESERVED = Set.of(
             "accounts", "api", "direct", "explore", "reels", "reel", "p", "stories",
             "notifications", "lab", "media", "create", "settings", "login", "logout",
-            "signup", "about", "help", "admin", "yangstagram", "static", "assets");
+            "signup", "about", "help", "admin", "yangstagram", "static", "assets", "archive", "ws");
 
     private UsernamePolicy() {
     }

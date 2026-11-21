@@ -5,8 +5,7 @@ import { Link } from 'react-router'
 const TOKEN = /([#@])([\p{L}\p{N}_.]+)/gu
 
 /**
- * 캡션·댓글 본문. @사용자는 프로필 링크, #해시태그는 강조 표시
- * (해시태그 페이지는 M2 검색 단계에서 연결).
+ * 캡션·댓글 본문. @사용자는 프로필, #해시태그는 해시태그 페이지로 연결한다.
  */
 export function RichText({ text }: { text: string }) {
   const parts: React.ReactNode[] = []
@@ -27,9 +26,9 @@ export function RichText({ text }: { text: string }) {
       // 해시태그에는 마침표가 들어가지 않는다
       const tag = word.split('.')[0]
       parts.push(
-        <span key={start} className="whitespace-nowrap text-primary">
+        <Link key={start} to={`/explore/tags/${encodeURIComponent(tag.toLowerCase())}`} className="whitespace-nowrap text-primary hover:underline">
           #{tag}
-        </span>,
+        </Link>,
       )
       if (tag.length < word.length) parts.push(word.slice(tag.length))
     }

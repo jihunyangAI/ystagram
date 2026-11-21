@@ -12,6 +12,8 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/media': 'http://localhost:8080',
+      // 실시간 이벤트 (DM·알림). 세션 쿠키가 함께 넘어간다
+      '/ws': { target: 'ws://localhost:8080', ws: true },
     },
   },
 })

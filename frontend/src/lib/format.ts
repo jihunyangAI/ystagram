@@ -1,3 +1,5 @@
+import { nowMs } from './clock'
+
 /** 숫자를 인스타그램 한국어 표기처럼 줄인다. 예: 1,234 / 1.2만 / 3.4억 */
 export function formatCount(n: number): string {
   if (n < 10_000) return n.toLocaleString('ko-KR')
@@ -14,7 +16,7 @@ function trim(v: number): string {
  * 짧게(피드 헤더): 방금 / 5분 / 3시간 / 2일 / 4주
  * 길게(게시물 아래): 5분 전 / 3시간 전 / 2일 전 / 11월 3일 / 2024년 11월 3일
  */
-export function timeAgo(iso: string, style: 'short' | 'long' = 'short', now = Date.now()): string {
+export function timeAgo(iso: string, style: 'short' | 'long' = 'short', now = nowMs()): string {
   const then = new Date(iso).getTime()
   const sec = Math.max(0, Math.floor((now - then) / 1000))
   const min = Math.floor(sec / 60)

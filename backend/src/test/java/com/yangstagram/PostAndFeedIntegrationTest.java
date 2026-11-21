@@ -38,7 +38,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder;
 
 /** M1: 피드·게시물 작성·좋아요·댓글·팔로우·프로필 편집 */
-@SpringBootTest(properties = "yangstagram.media.storage-dir=build/test-storage")
+@SpringBootTest(properties = {"yangstagram.media.storage-dir=build/test-storage", "yangstagram.seed.size=small"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class PostAndFeedIntegrationTest {

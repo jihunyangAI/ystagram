@@ -22,7 +22,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** 실제 PostgreSQL(Testcontainers) 위에서 가입·로그인·계정 전환·시드를 확인한다. */
-@SpringBootTest
+@SpringBootTest(properties = "yangstagram.seed.size=small")
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class AuthAndLabIntegrationTest {

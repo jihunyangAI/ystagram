@@ -1,23 +1,29 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
-import { Camera, Clapperboard, Copy, Grid3x3, Heart, Link2, Lock, Menu, MessageCircle, Repeat2, SquareUser } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router'
+import { Bookmark, Camera, Clapperboard, Copy, Grid3x3, Link2, Lock, Menu, Repeat2, SquareUser, UserPlus } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import type { LucideIcon } from 'lucide-react'
-import { Avatar } from '../components/Avatar'
 import { UserBadges } from '../components/UserBadges'
 import { toast } from '../components/Toast'
+import { InfiniteGrid } from '../components/post/Grid'
+import { StoryRingAvatar } from '../components/story/StoryRingAvatar'
 import { FollowButton } from '../components/user/FollowButton'
 import { UserListModal } from '../components/user/UserListModal'
 import { api, ApiError } from '../lib/api'
+import { openConversation } from '../lib/dm'
 import { formatCount } from '../lib/format'
-import type { GridItem, Profile, Slice } from '../lib/types'
+import { useNotificationUnread, useSavedOverview } from '../lib/social'
+import type { CollectionView, Profile } from '../lib/types'
 import { NotFoundPage } from './NotFoundPage'
 
-const TABS: { key: string; label: string; icon: LucideIcon; stage?: string }[] = [
+type TabKey = 'posts' | 'reels' | 'reposts' | 'saved' | 'tagged'
+
+const TABS: { key: TabKey; label: string; icon: LucideIcon; stage?: string; meOnly?: boolean }[] = [
   { key: 'posts', label: '게시물', icon: Grid3x3 },
   { key: 'reels', label: '릴스', icon: Clapperboard, stage: 'M3' },
-  { key: 'reposts', label: '리포스트', icon: Repeat2, stage: 'M2' },
+  { key: 'reposts', label: '리포스트', icon: Repeat2 },
+  { key: 'saved', label: '저장됨', icon: Bookmark, meOnly: true },
   { key: 'tagged', label: '태그됨', icon: SquareUser, stage: 'M3' },
 ]
 
@@ -25,12 +31,15 @@ type ListKind = 'followers' | 'following' | null
 
 export function ProfilePage() {
   const { username = '' } = useParams()
-  const [tab, setTab] = useState('posts')
+  const navigate = useNavigate()
+  const [tab, setTab] = useState<TabKey>('posts')
   const [list, setList] = useState<ListKind>(null)
+  const [opening, setOpening] = useState(false)
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ['profile', username],
     queryFn: () => api.get<Profile>(`/api/users/${encodeURIComponent(username)}`),
   })
+  const unread = useNotificationUnread(!!profile?.me)
 
   useEffect(() => {
     if (profile) document.title = `${profile.user.fullName}(@${profile.user.username}) • Yangstagram`
@@ -38,6 +47,7 @@ export function ProfilePage() {
       document.title = 'Yangstagram'
     }
   }, [profile])
+  useEffect(() => setTab('posts'), [username])
 
   if (isLoading) return <div className="p-10 text-center text-sm text-muted">불러오는 중…</div>
   if (error instanceof ApiError && error.status === 404) return <NotFoundPage />
@@ -60,14 +70,31 @@ export function ProfilePage() {
     )
   }
 
+  const message = () => {
+    setOpening(true)
+    openConversation([user.username])
+      .then((c) => navigate(`/direct/t/${c.id}`), (e: Error) => toast(e.message))
+      .finally(() => setOpening(false))
+  }
+
   const actions = profile.me ? (
     <>
       <Link to="/accounts/edit" className="btn btn-secondary flex-1 md:flex-none">
         프로필 편집
       </Link>
-      <button className="btn btn-secondary flex-1 md:flex-none" onClick={shareProfile}>
-        프로필 공유
-      </button>
+      <Link to="/archive/stories" className="btn btn-secondary flex-1 md:flex-none">
+        보관함 보기
+      </Link>
+      {user.isPrivate && (
+        <Link to="/notifications/requests" className="btn btn-secondary relative md:flex-none" aria-label="팔로우 요청">
+          <UserPlus size={18} />
+          {!!unread.data?.requests && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[11px] text-white">
+              {unread.data.requests}
+            </span>
+          )}
+        </Link>
+      )}
     </>
   ) : (
     <>
@@ -77,11 +104,15 @@ export function ProfilePage() {
         followsMe={profile.followsMe}
         className="flex-1 md:flex-none"
       />
-      <button className="btn btn-secondary flex-1 md:flex-none" onClick={() => toast('메시지(DM)는 M2 단계에서 추가됩니다')}>
+      <button className="btn btn-secondary flex-1 md:flex-none" disabled={opening} onClick={message}>
         메시지
       </button>
     </>
   )
+
+  const hasStory = profile.story !== 'NONE'
+  const openStory = () => hasStory && navigate(`/stories/${user.username}`)
+  const tabs = TABS.filter((t) => !t.meOnly || profile.me)
 
   return (
     <div className="mx-auto w-full max-w-[935px]">
@@ -101,11 +132,18 @@ export function ProfilePage() {
       {/* 프로필 헤더 */}
       <section className="px-4 pt-4 md:px-8 md:pt-10">
         <div className="flex items-center gap-6 md:items-start md:gap-20 md:px-12">
-          <Avatar user={user} size={150} className="hidden md:block" />
-          <Avatar user={user} size={80} className="md:hidden" />
+          <button
+            onClick={openStory}
+            className={clsx('shrink-0', !hasStory && 'cursor-default')}
+            aria-label={hasStory ? `${user.username}님의 스토리 보기` : undefined}
+            tabIndex={hasStory ? 0 : -1}
+          >
+            <StoryRingAvatar user={user} ring={profile.story} size={150} className="hidden md:inline-flex" />
+            <StoryRingAvatar user={user} ring={profile.story} size={86} className="md:hidden" />
+          </button>
 
           <div className="min-w-0 flex-1">
-            <div className="hidden items-center gap-3 md:flex">
+            <div className="hidden flex-wrap items-center gap-3 md:flex">
               <h1 className="flex items-center gap-1.5 text-xl">
                 {user.username} <UserBadges user={user} size={18} />
               </h1>
@@ -162,7 +200,7 @@ export function ProfilePage() {
       ) : (
         <>
           <nav className="mt-6 flex border-t border-border md:justify-center md:gap-14" role="tablist">
-            {TABS.map(({ key, label, icon: Icon }) => (
+            {tabs.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
                 role="tab"
@@ -179,9 +217,28 @@ export function ProfilePage() {
               </button>
             ))}
           </nav>
-          {tab === 'posts' ? (
-            <PostGrid username={user.username} mine={profile.me} />
-          ) : (
+          {tab === 'posts' && (
+            <InfiniteGrid
+              queryKey={[user.username]}
+              url={`/api/users/${user.username}/posts`}
+              empty={<EmptyPosts mine={profile.me} />}
+            />
+          )}
+          {tab === 'reposts' && (
+            <InfiniteGrid
+              queryKey={['reposts', user.username]}
+              url={`/api/users/${user.username}/reposts`}
+              empty={
+                <EmptyTab
+                  icon={Repeat2}
+                  title="리포스트"
+                  text={profile.me ? '다른 사람의 게시물을 리포스트하면 여기에 표시됩니다.' : '아직 리포스트한 게시물이 없습니다.'}
+                />
+              }
+            />
+          )}
+          {tab === 'saved' && profile.me && <SavedTab username={user.username} />}
+          {(tab === 'reels' || tab === 'tagged') && (
             <div className="px-6 py-16 text-center text-sm text-muted">
               {TABS.find((t) => t.key === tab)?.label} 탭은 {TABS.find((t) => t.key === tab)?.stage} 단계에서 추가됩니다.
             </div>
@@ -210,91 +267,75 @@ export function ProfilePage() {
   )
 }
 
-/** 게시물 그리드: 3열, 3:4 비율 (2025년 개편), 끝까지 내리면 더 불러온다 */
-function PostGrid({ username, mine }: { username: string; mine: boolean }) {
-  const query = useInfiniteQuery({
-    queryKey: ['grid', username],
-    queryFn: ({ pageParam }) =>
-      api.get<Slice<GridItem>>(`/api/users/${username}/posts${pageParam ? `?cursor=${pageParam}` : ''}`),
-    initialPageParam: '',
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
-  })
-  const sentinel = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = sentinel.current
-    if (!el) return
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage()
-      },
-      { rootMargin: '600px 0px' },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [query])
-
-  const items = query.data?.pages.flatMap((p) => p.items) ?? []
-
-  if (query.isLoading) {
-    return (
-      <div className="grid grid-cols-3 gap-0.5" aria-hidden>
-        {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="aspect-[3/4] animate-pulse bg-surface-2" />
-        ))}
-      </div>
-    )
-  }
-  if (query.isError) return <p className="p-10 text-center text-sm text-danger">{query.error.message}</p>
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-text">
-          <Camera size={28} strokeWidth={1.5} />
-        </span>
-        <p className="text-2xl font-extrabold">{mine ? '사진 공유' : '게시물 없음'}</p>
-        {mine && (
-          <>
-            <p className="text-sm text-muted">사진을 공유하면 회원님의 프로필에 표시됩니다.</p>
-            <Link to="/create" className="text-sm font-semibold text-primary">
-              첫 사진 공유하기
-            </Link>
-          </>
-        )}
-      </div>
-    )
-  }
-
+function EmptyPosts({ mine }: { mine: boolean }) {
   return (
-    <>
-      <div className="grid grid-cols-3 gap-0.5 md:gap-1">
-        {items.map((it) => (
-          <Link
-            key={it.shortcode}
-            to={`/p/${it.shortcode}`}
-            className="group relative block aspect-[3/4] overflow-hidden bg-surface-2"
-            aria-label={`게시물 보기${it.mediaCount > 1 ? ` (사진 ${it.mediaCount}장)` : ''}`}
-          >
-            <img src={it.thumbUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-            {it.mediaCount > 1 && (
-              <Copy size={18} className="absolute top-2 right-2 rotate-180 text-white drop-shadow" aria-hidden />
-            )}
-            <div className="absolute inset-0 hidden items-center justify-center gap-6 bg-black/35 font-bold text-white group-hover:flex">
-              {it.likeCount !== null && (
-                <span className="flex items-center gap-1.5">
-                  <Heart size={20} className="fill-white" /> {formatCount(it.likeCount)}
-                </span>
-              )}
-              <span className="flex items-center gap-1.5">
-                <MessageCircle size={20} className="-scale-x-100 fill-white" /> {formatCount(it.commentCount)}
-              </span>
-            </div>
+    <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-text">
+        <Camera size={28} strokeWidth={1.5} />
+      </span>
+      <p className="text-2xl font-extrabold">{mine ? '사진 공유' : '게시물 없음'}</p>
+      {mine && (
+        <>
+          <p className="text-sm text-muted">사진을 공유하면 회원님의 프로필에 표시됩니다.</p>
+          <Link to="/create" className="text-sm font-semibold text-primary">
+            첫 사진 공유하기
           </Link>
+        </>
+      )}
+    </div>
+  )
+}
+
+function EmptyTab({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-text">
+        <Icon size={28} strokeWidth={1.5} />
+      </span>
+      <p className="text-2xl font-extrabold">{title}</p>
+      <p className="text-sm text-muted">{text}</p>
+    </div>
+  )
+}
+
+/** 저장됨 탭: "모든 게시물" + 컬렉션 (본인만 볼 수 있음) */
+function SavedTab({ username }: { username: string }) {
+  const { data, isLoading } = useSavedOverview()
+  if (isLoading) return <p className="p-10 text-center text-sm text-muted">불러오는 중…</p>
+  if (!data) return null
+  if (data.all.count === 0) {
+    return <EmptyTab icon={Bookmark} title="저장" text="다시 보고 싶은 사진과 동영상을 저장하세요. 저장한 내용은 회원님만 볼 수 있습니다." />
+  }
+  return (
+    <div className="px-1 pt-4 md:px-0">
+      <p className="mb-3 px-3 text-xs text-muted md:px-0">저장한 내용은 회원님만 볼 수 있습니다</p>
+      <div className="grid grid-cols-2 gap-1 md:grid-cols-3 md:gap-4">
+        {[data.all, ...data.collections].map((c) => (
+          <CollectionCard key={c.id ?? 'all'} c={c} to={`/${username}/saved/${c.id ?? 'all'}`} />
         ))}
       </div>
-      <div ref={sentinel} className="h-4" />
-      {query.isFetchingNextPage && <p className="py-4 text-center text-xs text-muted">불러오는 중…</p>}
-    </>
+    </div>
+  )
+}
+
+function CollectionCard({ c, to }: { c: CollectionView; to: string }) {
+  return (
+    <Link to={to} className="group relative block aspect-square overflow-hidden rounded-md bg-surface-2">
+      {c.covers.length >= 4 ? (
+        <span className="grid h-full grid-cols-2 grid-rows-2 gap-px">
+          {c.covers.slice(0, 4).map((u) => (
+            <img key={u} src={u} alt="" className="h-full w-full object-cover" />
+          ))}
+        </span>
+      ) : c.covers[0] ? (
+        <img src={c.covers[0]} alt="" className="h-full w-full object-cover" />
+      ) : null}
+      <span className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent" />
+      <span className="absolute bottom-3 left-3 text-white">
+        <b className="block text-base">{c.name}</b>
+        <span className="text-xs text-white/80">게시물 {c.count}개</span>
+      </span>
+    </Link>
   )
 }
 

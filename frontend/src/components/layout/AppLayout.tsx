@@ -1,4 +1,9 @@
 import { Navigate, Outlet, useLocation } from 'react-router'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../../lib/api'
+import { setClockOffset } from '../../lib/clock'
+import type { LabStatus } from '../../lib/types'
+import { RealtimeBridge } from '../RealtimeBridge'
 import { useMe } from '../../lib/auth'
 import { ResearchBanner } from '../ResearchBanner'
 import { BottomNav, MobileTopBar } from './MobileBars'
@@ -8,6 +13,16 @@ import { Sidebar } from './Sidebar'
 export function AppLayout() {
   const { data: me, isLoading, isError } = useMe()
   const location = useLocation()
+  // Lab 시간 가속이 걸려 있으면 화면의 "N분 전" 표시도 같은 시계를 쓴다
+  useQuery({
+    queryKey: ['lab-clock'],
+    queryFn: async () => {
+      const s = await api.get<LabStatus>('/api/lab/status')
+      setClockOffset(s.clockOffsetMinutes)
+      return s.clockOffsetMinutes
+    },
+    staleTime: 60_000,
+  })
 
   if (isLoading) {
     return <div className="flex h-dvh items-center justify-center text-sm text-muted">불러오는 중…</div>
@@ -26,6 +41,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-dvh">
+      <RealtimeBridge meId={me.user.id} />
       <Sidebar me={me} />
       <div className="md:pl-[72px] xl:pl-[244px]">
         <ResearchBanner />

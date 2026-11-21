@@ -5,6 +5,7 @@ import { CircleCheck, FlaskConical } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import { openLabSwitcher } from '../components/lab/LabSwitcher'
 import { PostCard } from '../components/post/PostCard'
+import { StoryTray } from '../components/story/StoryTray'
 import { UserRow } from '../components/user/UserRow'
 import { api } from '../lib/api'
 import { useMe } from '../lib/auth'
@@ -37,6 +38,7 @@ export function HomePage() {
   return (
     <div className="mx-auto flex w-full max-w-[935px] justify-center gap-16 md:pt-6">
       <div className="w-full max-w-[470px]">
+        <StoryTray />
         {feed.isLoading && <FeedSkeleton />}
         {feed.isError && <p className="p-10 text-center text-sm text-danger">피드를 불러오지 못했습니다. {feed.error.message}</p>}
         {feed.isSuccess && posts.length === 0 && <EmptyFeed />}

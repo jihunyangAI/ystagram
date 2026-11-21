@@ -5,6 +5,7 @@ import { Avatar } from '../../components/Avatar'
 import { EditPostModal } from '../../components/post/EditPostModal'
 import { CarouselDots, MediaCarousel } from '../../components/post/MediaCarousel'
 import { CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from '../../components/post/PostParts'
+import type { ReplyTarget } from '../../components/post/PostParts'
 import { RichText } from '../../components/post/RichText'
 import { ApiError } from '../../lib/api'
 import { fullDate, timeAgo } from '../../lib/format'
@@ -60,7 +61,12 @@ function PostDetail({ post }: { post: PostView }) {
   const [menu, setMenu] = useState(false)
   const [editing, setEditing] = useState(false)
   const [index, setIndex] = useState(0)
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const startReply = (target: ReplyTarget) => {
+    setReplyTo(target)
+    input.current?.focus()
+  }
   const list = comments.data?.pages.flatMap((p) => p.items) ?? []
 
   useEffect(() => {
@@ -118,7 +124,12 @@ function PostDetail({ post }: { post: PostView }) {
             </div>
           )}
           {list.map((c) => (
-            <CommentItem key={c.id} comment={c} shortcode={post.shortcode} />
+            <CommentItem
+              key={c.id}
+              comment={c}
+              shortcode={post.shortcode}
+              onReply={post.commentsDisabled ? undefined : startReply}
+            />
           ))}
           {comments.hasNextPage && (
             <button
@@ -143,7 +154,13 @@ function PostDetail({ post }: { post: PostView }) {
             {timeAgo(post.createdAt, 'long')}
           </time>
           {!post.commentsDisabled && (
-            <CommentInput shortcode={post.shortcode} inputRef={input} className="border-t border-border px-3 md:px-0" />
+            <CommentInput
+              shortcode={post.shortcode}
+              inputRef={input}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
+              className="border-t border-border px-3 md:px-0"
+            />
           )}
         </div>
       </div>
