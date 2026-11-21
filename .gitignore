@@ -3,6 +3,7 @@
 /data/
 
 # 가짜 데이터용 사진 (스크립트와 출처만 커밋)
+/seed-media/photos/
 /seed-media/**/*.jpg
 /seed-media/**/*.jpeg
 /seed-media/**/*.png

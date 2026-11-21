@@ -21,4 +21,10 @@ public final class CurrentUser {
     public static Optional<Long> id() {
         return get().map(AuthUser::id);
     }
+
+    /** 로그인이 필요한 API에서 사용 (보안 설정이 이미 막지만, 혹시 몰라 401로 응답) */
+    public static long requireId() {
+        return id().orElseThrow(() -> new com.yangstagram.common.error.ApiException(
+                org.springframework.http.HttpStatus.UNAUTHORIZED, "LOGIN_REQUIRED", "로그인이 필요합니다."));
+    }
 }

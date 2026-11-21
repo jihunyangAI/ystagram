@@ -21,6 +21,12 @@ spring:
   flyway:
     enabled: true
 
+  # 게시물 하나에 사진 최대 20장 (화면에서 1080px로 줄여서 보내므로 한 장 1MB 안팎)
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 120MB
+
 server:
   port: 8080
 
@@ -34,3 +40,7 @@ yangstagram:
     fake-password: yang1234
   lab:
     enabled: true
+  # 업로드 파일과 가짜 데이터 사진 위치 (backend 폴더 기준)
+  media:
+    storage-dir: ../storage
+    seed-dir: ../seed-media/photos

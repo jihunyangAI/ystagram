@@ -49,6 +49,9 @@ public class User {
     @Column(length = 30)
     private String pronouns;
 
+    @Column(length = 200)
+    private String website;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AccountType accountType = AccountType.PERSONAL;

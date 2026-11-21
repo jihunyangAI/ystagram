@@ -47,6 +47,12 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("MALFORMED_REQUEST", "요청 형식이 올바르지 않습니다."));
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleTooLarge(Exception e) {
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
+                .body(ErrorResponse.of("FILE_TOO_LARGE", "파일이 너무 큽니다."));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)

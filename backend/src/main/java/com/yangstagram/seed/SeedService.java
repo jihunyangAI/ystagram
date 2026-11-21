@@ -49,16 +49,19 @@ public class SeedService {
     private final PasswordEncoder passwordEncoder;
     private final LabClock clock;
     private final SeedProperties properties;
+    private final SeedPhotos seedPhotos;
 
     public SeedService(JdbcTemplate jdbc, PasswordEncoder passwordEncoder, LabClock clock,
-                       SeedProperties properties) {
+                       SeedProperties properties, SeedPhotos seedPhotos) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
         this.properties = properties;
+        this.seedPhotos = seedPhotos;
     }
 
-    public record SeedResult(SeedSize size, long seed, int users, int follows, long elapsedMillis) {
+    public record SeedResult(SeedSize size, long seed, int users, int follows, int posts, int likes,
+                             int comments, long elapsedMillis) {
     }
 
     enum Persona { INFLUENCER, BUSINESS, REGULAR, LURKER }
@@ -86,7 +89,10 @@ public class SeedService {
     @Transactional
     public SeedResult generate(SeedSize size, long seed) {
         long started = System.currentTimeMillis();
-        jdbc.execute("truncate table follows, users restart identity cascade");
+        jdbc.execute("""
+                truncate table comments, likes, post_hashtags, hashtags, post_media, posts, locations,
+                               follows, users restart identity cascade
+                """);
 
         Random rnd = new Random(seed);
         Faker ko = new Faker(Locale.KOREAN, new Random(seed + 1));
@@ -98,12 +104,15 @@ public class SeedService {
 
         List<FakeFollow> follows = buildFollows(users, rnd, now);
         insertFollows(follows);
+
+        SeedPosts.Result content = new SeedPosts(jdbc, rnd, now, seedPhotos.load()).generate(users, follows);
         recomputeCounts();
 
         long elapsed = System.currentTimeMillis() - started;
-        log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, {}ms",
-                size, seed, users.size(), follows.size(), elapsed);
-        return new SeedResult(size, seed, users.size(), follows.size(), elapsed);
+        log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, 게시물={}, 좋아요={}, 댓글={}, {}ms",
+                size, seed, users.size(), follows.size(), content.posts(), content.likes(), content.comments(), elapsed);
+        return new SeedResult(size, seed, users.size(), follows.size(), content.posts(), content.likes(),
+                content.comments(), elapsed);
     }
 
     // ---------------------------------------------------------------- 사용자
@@ -363,7 +372,16 @@ public class SeedService {
         jdbc.update("""
                 update users u set
                   followers_count = (select count(*) from follows f where f.following_id = u.id and f.status = 'ACCEPTED'),
-                  following_count = (select count(*) from follows f where f.follower_id = u.id and f.status = 'ACCEPTED')
+                  following_count = (select count(*) from follows f where f.follower_id = u.id and f.status = 'ACCEPTED'),
+                  posts_count = (select count(*) from posts p where p.author_id = u.id and p.deleted_at is null)
+                """);
+        jdbc.update("""
+                update posts p set
+                  like_count = (select count(*) from likes l where l.post_id = p.id),
+                  comment_count = (select count(*) from comments c where c.post_id = p.id)
+                """);
+        jdbc.update("""
+                update hashtags h set post_count = (select count(*) from post_hashtags ph where ph.hashtag_id = h.id)
                 """);
     }
 

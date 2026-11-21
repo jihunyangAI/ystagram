@@ -55,6 +55,7 @@ public class LabController {
     }
 
     public record LabStatus(long users, long fakeUsers, long follows, long pendingFollows,
+                            long posts, long likes, long comments, long hashtags,
                             Instant now, long clockOffsetMinutes, String fakePassword) {
     }
 
@@ -74,7 +75,12 @@ public class LabController {
         Long fake = jdbc.queryForObject("select count(*) from users where is_fake", Long.class);
         Long follows = jdbc.queryForObject("select count(*) from follows where status = 'ACCEPTED'", Long.class);
         Long pending = jdbc.queryForObject("select count(*) from follows where status = 'PENDING'", Long.class);
-        return new LabStatus(userRepository.count(), fake, follows, pending, Instant.now(clock),
+        Long posts = jdbc.queryForObject("select count(*) from posts where deleted_at is null", Long.class);
+        Long likes = jdbc.queryForObject("select count(*) from likes", Long.class);
+        Long comments = jdbc.queryForObject("select count(*) from comments", Long.class);
+        Long hashtags = jdbc.queryForObject("select count(*) from hashtags", Long.class);
+        return new LabStatus(userRepository.count(), fake, follows, pending, posts, likes, comments, hashtags,
+                Instant.now(clock),
                 clock.getOffset().toMinutes(), seedProperties.fakePassword());
     }
 
