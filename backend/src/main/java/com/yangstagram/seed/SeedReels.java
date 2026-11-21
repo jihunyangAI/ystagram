@@ -39,6 +39,13 @@ final class SeedReels {
     private final Path reelsDir;
     private final JsonMapper json;
 
+    private SeedSize size = SeedSize.MEDIUM;
+
+    SeedReels density(SeedSize size) {
+        this.size = size;
+        return this;
+    }
+
     SeedReels(JdbcTemplate jdbc, Random rnd, Instant now, Path reelsDir, JsonMapper json) {
         this.jdbc = jdbc;
         this.rnd = rnd;
@@ -85,6 +92,7 @@ final class SeedReels {
                 case REGULAR -> rnd.nextDouble() < 0.5 ? rnd.nextInt(3) : 0;
                 case LURKER -> 0;
             };
+            count = size.scale(count); // large: 사람당 릴스 2.5배
             for (int i = 0; i < count; i++) {
                 long id = nextPostId++;
                 Clip clip = clips.get(rnd.nextInt(clips.size()));

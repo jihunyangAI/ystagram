@@ -1,6 +1,8 @@
 package com.yangstagram.algo;
 
+import com.yangstagram.ad.AdService;
 import com.yangstagram.algo.AlgorithmSettings.Ranking;
+import com.yangstagram.post.dto.PostDtos;
 import com.yangstagram.algo.Ranker.Request;
 import com.yangstagram.algo.Ranker.Scored;
 import com.yangstagram.common.paging.Slice;
@@ -47,7 +49,7 @@ public class Recommendations {
 
     /** 홈 추천: 팔로우하지 않는 공개 계정, 추천 허용 게시물 */
     static final String HOME_SUGGESTED = """
-            p.author_id <> :me and not a.is_private and p.recommendable
+            p.author_id <> :me and not a.is_private and p.recommendable and not p.trial
             and p.author_id not in %1$s
             and not exists (select 1 from reposts r where r.post_id = p.id and r.user_id in %1$s)
             and %2$s and %3$s
@@ -73,9 +75,11 @@ public class Recommendations {
     private final FeatureFlags flags;
     private final NamedParameterJdbcTemplate jdbc;
     private final LabClock clock;
+    private final AdService ads;
 
     public Recommendations(Ranker ranker, AlgorithmSettings settings, InterestService interests, PostQueries queries,
-                           FeatureFlags flags, NamedParameterJdbcTemplate jdbc, LabClock clock) {
+                           FeatureFlags flags, NamedParameterJdbcTemplate jdbc, LabClock clock, AdService ads) {
+        this.ads = ads;
         this.ranker = ranker;
         this.settings = settings;
         this.interests = interests;
@@ -100,7 +104,7 @@ public class Recommendations {
         Instant now = Instant.now(clock);
         Instant since = sinceMs == null ? now : Instant.ofEpochMilli(sinceMs);
         Map<Component, Double> w = settings.weights(Surface.EXPLORE);
-        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, EXPLORE,
+        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, ai(EXPLORE),
                 new MapSqlParameterSource(), EXPLORE_PAGE + 1, p * EXPLORE_PAGE));
         Integer next = scored.size() > EXPLORE_PAGE ? p + 1 : null;
         List<Scored> pageItems = scored.subList(0, Math.min(EXPLORE_PAGE, scored.size()));
@@ -121,7 +125,7 @@ public class Recommendations {
         Instant now = Instant.now(clock);
         Instant since = sinceMs == null ? now : Instant.ofEpochMilli(sinceMs);
         Map<Component, Double> w = settings.weights(Surface.REELS);
-        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, REELS,
+        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, ai(REELS),
                 new MapSqlParameterSource(), REELS_PAGE + 1, p * REELS_PAGE));
         Integer next = scored.size() > REELS_PAGE ? p + 1 : null;
         List<Scored> pageItems = scored.subList(0, Math.min(REELS_PAGE, scored.size()));
@@ -143,19 +147,22 @@ public class Recommendations {
     /**
      * 홈 피드 (기획서 §6.5): 한 쪽 10개 중 팔로우 게시물 (10 − 추천 수)개 + 추천 게시물.
      * 같은 작성자가 3개 연달아 나오지 않게 섞고, 팔로우 게시물을 다 보면 그 뒤로 추천만 이어진다.
-     * 커서: "h.{since}.{팔로우 오프셋}.{추천 오프셋}"
+     * 광고는 Lab 플래그 수만큼 고르게 끼운다 (점수식과 따로, 순위에 세지 않음).
+     * 커서: "h.{since}.{팔로우 오프셋}.{추천 오프셋}.{광고 오프셋}"
      */
     public Slice<PostView> home(long me, String cursor) {
         Instant now = Instant.now(clock);
         long sinceMs = now.toEpochMilli();
         int fOff = 0;
         int sOff = 0;
+        int aOff = 0;
         if (cursor != null && cursor.startsWith("h.")) {
             String[] parts = cursor.split("\\.");
             try {
                 sinceMs = Long.parseLong(parts[1]);
                 fOff = Math.max(0, Integer.parseInt(parts[2]));
                 sOff = Math.max(0, Integer.parseInt(parts[3]));
+                if (parts.length > 4) aOff = Math.max(0, Integer.parseInt(parts[4]));
             } catch (RuntimeException ignored) {
                 // 잘못된 커서는 처음부터
             }
@@ -173,7 +180,7 @@ public class Recommendations {
 
         int need = moreFollowing ? k : FEED_PAGE - following.size();
         List<Scored> suggested = need == 0 ? List.of() : ranker.rank(new Request(me, w, topics, now, since,
-                HOME_SUGGESTED, new MapSqlParameterSource(), need + 1, sOff));
+                ai(HOME_SUGGESTED), new MapSqlParameterSource(), need + 1, sOff));
         boolean moreSuggested = suggested.size() > need;
         if (moreSuggested) suggested = suggested.subList(0, need);
 
@@ -202,8 +209,25 @@ public class Recommendations {
             items.add(v.withRanking(AlgorithmSettings.ranking(Surface.FEED, source, s, w, ++rank,
                     caughtUpAt != null && caughtUpAt == v.id())));
         }
+
+        // 광고 끼우기
+        int adCount = flags.get().ads();
+        int adsShown = 0;
+        if (adCount > 0 && items.size() >= 3) {
+            List<AdService.Picked> picked = ads.pick(me, topics, since, adCount, aOff, ids);
+            List<PostView> adViews = queries.views(picked.stream().map(AdService.Picked::postId).toList(), me);
+            Map<Long, PostDtos.AdInfo> info = picked.stream()
+                    .collect(Collectors.toMap(AdService.Picked::postId, AdService.Picked::info));
+            List<Integer> slots = AdService.slots(items.size(), adViews.size());
+            for (int i = 0; i < adViews.size() && i < slots.size(); i++) {
+                PostView ad = adViews.get(i);
+                items.add(Math.min(slots.get(i), items.size()), ad.withAd(info.get(ad.id())));
+                adsShown++;
+            }
+        }
         String next = moreFollowing || moreSuggested
-                ? "h.%d.%d.%d".formatted(sinceMs, fOff + following.size(), sOff + suggested.size()) : null;
+                ? "h.%d.%d.%d.%d".formatted(sinceMs, fOff + following.size(), sOff + suggested.size(), aOff + adsShown)
+                : null;
         return new Slice<>(items, next);
     }
 
@@ -249,9 +273,9 @@ public class Recommendations {
     public List<PreviewItem> preview(Surface surface, long userId, Map<Component, Double> weights, int limit) {
         Instant now = Instant.now(clock);
         String candidates = switch (surface) {
-            case FEED -> "((" + HOME_FOLLOWING + ") or (" + HOME_SUGGESTED + "))";
-            case EXPLORE -> EXPLORE;
-            case REELS -> REELS;
+            case FEED -> "((" + HOME_FOLLOWING + ") or (" + ai(HOME_SUGGESTED) + "))";
+            case EXPLORE -> ai(EXPLORE);
+            case REELS -> ai(REELS);
         };
         List<Scored> scored = ranker.rank(new Request(userId, weights, interests.effective(userId), now, now,
                 candidates, new MapSqlParameterSource(), limit, 0));
@@ -284,6 +308,12 @@ public class Recommendations {
     }
 
     // ------------------------------------------------------------ 보조
+
+    /** AI 생성 프로필 추천 제외 규칙 (Lab 플래그로 끌 수 있음): 팔로우하는 사람 것은 그대로 */
+    private String ai(String candidates) {
+        if (flags.get().aiInRecs()) return candidates;
+        return "(" + candidates + ") and (not a.is_ai_profile or a.id in " + FOLLOWEES + ")";
+    }
 
     private static String topicLabel(String key) {
         if (key == null) return null;

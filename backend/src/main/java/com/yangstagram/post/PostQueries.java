@@ -52,7 +52,12 @@ public class PostQueries {
             (a.id = :me or not a.is_private or exists (
              select 1 from follows vf where vf.follower_id = :me and vf.following_id = a.id
              and vf.status = 'ACCEPTED'))
+            and (not p.trial or a.id = :me or not exists (
+             select 1 from follows tf where tf.follower_id = :me and tf.following_id = a.id and tf.status = 'ACCEPTED'))
             and """ + RelationSql.notBlocked("a.id");
+
+    /** 시험 릴스는 작성자 본인 말고는 프로필·팔로잉 피드에 나오지 않는다 */
+    public static final String NOT_TRIAL = " (not p.trial or p.author_id = :me) ";
 
     private final NamedParameterJdbcTemplate jdbc;
     private final FollowService followService;
@@ -72,12 +77,13 @@ public class PostQueries {
     /** 권한 판정·수정에 필요한 게시물 기본 정보 */
     public record PostRow(long id, String shortcode, UserSummary author, String caption, String location,
                           int likeCount, int commentCount, boolean hideLikeCount, boolean commentsDisabled,
-                          Instant createdAt, int repostCount, String type, int viewCount) {
+                          Instant createdAt, int repostCount, String type, int viewCount, boolean aiLabeled,
+                          boolean trial) {
     }
 
     private static final String ROW_SELECT = """
             select p.id, p.shortcode, p.caption, p.like_count, p.comment_count, p.hide_like_count,
-                   p.comments_disabled, p.created_at, p.repost_count, p.type, p.view_count,
+                   p.comments_disabled, p.created_at, p.repost_count, p.type, p.view_count, p.ai_labeled, p.trial,
                    l.id as location_id, l.name as location_name, %s
             from posts p
             join users a on a.id = p.author_id
@@ -89,7 +95,8 @@ public class PostQueries {
                 rs.getString("caption"), rs.getString("location_name"),
                 rs.getInt("like_count"), rs.getInt("comment_count"), rs.getBoolean("hide_like_count"),
                 rs.getBoolean("comments_disabled"), rs.getTimestamp("created_at").toInstant(),
-                rs.getInt("repost_count"), rs.getString("type"), rs.getInt("view_count"));
+                rs.getInt("repost_count"), rs.getString("type"), rs.getInt("view_count"),
+                rs.getBoolean("ai_labeled"), rs.getBoolean("trial"));
     }
 
     public Optional<PostRow> findByShortcode(String shortcode) {
@@ -132,14 +139,14 @@ public class PostQueries {
                     and ((p.author_id = :me and not :fav) or p.author_id in (select id from followees)
                          or exists (select 1 from post_collaborators pc where pc.post_id = p.id and pc.status = 'ACCEPTED'
                                     and (pc.user_id in (select id from followees) or (pc.user_id = :me and not :fav))))
-                    and %s
+                    and %s and (not p.trial or p.author_id = :me)
                   union all
                   select r.post_id, r.created_at, r.user_id
                   from reposts r
                   join posts p on p.id = r.post_id
                   join users a on a.id = p.author_id
                   where not :fav and r.user_id in (select id from followees)
-                    and p.deleted_at is null and a.deleted_at is null and not a.is_private
+                    and p.deleted_at is null and a.deleted_at is null and not a.is_private and not p.trial
                     and p.author_id <> :me and p.author_id not in (select id from followees)
                     and %s and %s and %s
                 ), dedup as (
@@ -208,13 +215,14 @@ public class PostQueries {
     public Slice<GridItem> grid(long authorId, long viewerId, Cursor cursor, int limit) {
         return gridOf("posts p join users a on a.id = p.author_id where (p.author_id = :author or exists ("
                         + "select 1 from post_collaborators pc where pc.post_id = p.id and pc.user_id = :author "
-                        + "and pc.status = 'ACCEPTED'))",
+                        + "and pc.status = 'ACCEPTED')) and" + NOT_TRIAL,
                 "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
     }
 
     /** 프로필 "릴스" 탭 */
     public Slice<GridItem> reelGrid(long authorId, long viewerId, Cursor cursor, int limit) {
-        return gridOf("posts p join users a on a.id = p.author_id where p.author_id = :author and p.type = 'REEL'",
+        return gridOf("posts p join users a on a.id = p.author_id where p.author_id = :author and p.type = 'REEL' and"
+                        + NOT_TRIAL,
                 "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
     }
 
@@ -422,7 +430,7 @@ public class PostQueries {
                     previews.getOrDefault(id, List.of()), saved.contains(id), reposted.contains(id),
                     r.repostCount(), reposts.get(id), rings.get(r.author().id()), r.type(), r.viewCount(),
                     tags.getOrDefault(id, List.of()), collaborators.getOrDefault(id, List.of()), invited.contains(id),
-                    null));
+                    r.aiLabeled(), r.trial() && mine, null, null));
         }
         return result;
     }

@@ -48,9 +48,11 @@ public class PostController {
     private final CommentService commentService;
     private final FollowService followService;
     private final NamedParameterJdbcTemplate jdbc;
+    private final ScheduledPosts scheduled;
 
     public PostController(PostService postService, CommentService commentService, FollowService followService,
-                          NamedParameterJdbcTemplate jdbc) {
+                          NamedParameterJdbcTemplate jdbc, ScheduledPosts scheduled) {
+        this.scheduled = scheduled;
         this.postService = postService;
         this.commentService = commentService;
         this.followService = followService;
@@ -63,6 +65,46 @@ public class PostController {
     public PostView create(@RequestPart(value = "files", required = false) List<MultipartFile> files,
                            @RequestPart("data") CreatePostRequest data) {
         return postService.create(CurrentUser.requireId(), files, data);
+    }
+
+    // ------------------------------------------------------------ 예약 게시
+
+    /** 예약 게시: 만들기와 같은 multipart, data.scheduledAt 필수 (10분 뒤 ~ 75일 안) */
+    @PostMapping(value = "/posts/scheduled", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ScheduledPosts.ScheduledView schedule(@RequestPart(value = "files", required = false) List<MultipartFile> files,
+                                                 @RequestPart("data") CreatePostRequest data) {
+        return scheduled.schedule(CurrentUser.requireId(), files, data);
+    }
+
+    @GetMapping("/me/scheduled")
+    public List<ScheduledPosts.ScheduledView> scheduledList() {
+        return scheduled.list(CurrentUser.requireId());
+    }
+
+    public record RescheduleRequest(java.time.Instant scheduledAt) {
+    }
+
+    @PatchMapping("/me/scheduled/{id}")
+    public ScheduledPosts.ScheduledView reschedule(@PathVariable long id, @RequestBody RescheduleRequest req) {
+        return scheduled.reschedule(id, CurrentUser.requireId(), req.scheduledAt());
+    }
+
+    @DeleteMapping("/me/scheduled/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelScheduled(@PathVariable long id) {
+        scheduled.cancel(id, CurrentUser.requireId());
+    }
+
+    @PostMapping("/me/scheduled/{id}/publish")
+    public PostView publishScheduled(@PathVariable long id) {
+        return scheduled.publishNow(id, CurrentUser.requireId());
+    }
+
+    /** 시험 릴스를 팔로워에게도 공유 */
+    @PostMapping("/posts/{shortcode}/trial/share")
+    public PostView shareTrial(@PathVariable String shortcode) {
+        return postService.shareTrial(shortcode, CurrentUser.requireId());
     }
 
     /** 릴스 올리기: video(영상) + poster(첫 화면 JPEG) + data(JSON) */

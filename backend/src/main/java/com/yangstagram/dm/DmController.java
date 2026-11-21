@@ -39,9 +39,38 @@ import org.springframework.web.multipart.MultipartFile;
 public class DmController {
 
     private final DmService dm;
+    private final ScheduledMessages scheduled;
 
-    public DmController(DmService dm) {
+    public DmController(DmService dm, ScheduledMessages scheduled) {
         this.dm = dm;
+        this.scheduled = scheduled;
+    }
+
+    // ------------------------------------------------------------ 예약 메시지 (보낸 사람에게만 보임)
+
+    public record ScheduleRequest(String body, java.time.Instant scheduledAt) {
+    }
+
+    @GetMapping("/conversations/{id}/scheduled")
+    public List<ScheduledMessages.ScheduledMessage> scheduled(@PathVariable long id) {
+        return scheduled.list(id, CurrentUser.requireId());
+    }
+
+    @PostMapping("/conversations/{id}/scheduled")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ScheduledMessages.ScheduledMessage schedule(@PathVariable long id, @RequestBody ScheduleRequest req) {
+        return scheduled.schedule(id, CurrentUser.requireId(), req.body(), req.scheduledAt());
+    }
+
+    @DeleteMapping("/scheduled/{sid}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelScheduled(@PathVariable long sid) {
+        scheduled.cancel(sid, CurrentUser.requireId());
+    }
+
+    @PostMapping("/scheduled/{sid}/send")
+    public MessageView sendScheduledNow(@PathVariable long sid) {
+        return scheduled.sendNow(sid, CurrentUser.requireId());
     }
 
     @GetMapping("/inbox")

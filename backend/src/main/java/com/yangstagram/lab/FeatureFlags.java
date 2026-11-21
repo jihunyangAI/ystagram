@@ -23,10 +23,34 @@ public class FeatureFlags {
      * @param navLayout            NEW(릴스·DM이 가운데) / CLASSIC(예전 순서: 홈·검색·만들기·릴스·프로필)
      * @param hideLikeCounts       모든 게시물의 좋아요 수를 숨긴다 (작성자 본인에게는 보임)
      * @param feedSuggestedPerPage 홈 피드 10개 중 추천 게시물 수 (0~5)
+     * @param adsPerPage          홈 피드 한 쪽에 끼우는 광고 수 (0 = 광고 끔, 최대 3)
+     * @param autoReply           가짜 사용자에게 DM을 보내면 몇 초 뒤 답장한다
+     * @param recommendAiProfiles AI 생성 프로필의 게시물도 추천(홈 추천·탐색·릴스)에 넣는다
      */
-    public record Flags(int hashtagLimit, String navLayout, boolean hideLikeCounts, int feedSuggestedPerPage) {
+    public record Flags(int hashtagLimit, String navLayout, boolean hideLikeCounts, int feedSuggestedPerPage,
+                        Integer adsPerPage, Boolean autoReply, Boolean recommendAiProfiles) {
 
-        public static final Flags DEFAULT = new Flags(5, "NEW", false, 2);
+        public static final Flags DEFAULT = new Flags(5, "NEW", false, 2, 1, true, false);
+
+        /** 예전에 저장한 값에는 새 항목이 없으므로 기본값으로 채운다 */
+        Flags withDefaults() {
+            return new Flags(hashtagLimit, navLayout, hideLikeCounts, feedSuggestedPerPage,
+                    adsPerPage == null ? DEFAULT.adsPerPage : adsPerPage,
+                    autoReply == null ? DEFAULT.autoReply : autoReply,
+                    recommendAiProfiles == null ? DEFAULT.recommendAiProfiles : recommendAiProfiles);
+        }
+
+        public int ads() {
+            return adsPerPage == null ? DEFAULT.adsPerPage : adsPerPage;
+        }
+
+        public boolean bot() {
+            return autoReply == null ? DEFAULT.autoReply : autoReply;
+        }
+
+        public boolean aiInRecs() {
+            return recommendAiProfiles == null ? DEFAULT.recommendAiProfiles : recommendAiProfiles;
+        }
 
         Flags normalized() {
             if (hashtagLimit < 1 || hashtagLimit > 30) {
@@ -38,12 +62,15 @@ public class FeatureFlags {
             if (feedSuggestedPerPage < 0 || feedSuggestedPerPage > 5) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "BAD_FLAG", "추천 게시물 수는 0~5 사이입니다.");
             }
-            return this;
+            if (adsPerPage != null && (adsPerPage < 0 || adsPerPage > 3)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "BAD_FLAG", "광고 수는 0~3 사이입니다.");
+            }
+            return withDefaults();
         }
     }
 
     public Flags get() {
-        return settings.get(KEY, Flags.class).orElse(Flags.DEFAULT);
+        return settings.get(KEY, Flags.class).orElse(Flags.DEFAULT).withDefaults();
     }
 
     public Flags set(Flags flags) {

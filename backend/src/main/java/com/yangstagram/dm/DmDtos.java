@@ -33,7 +33,7 @@ public final class DmDtos {
     public record MessageView(long id, long conversationId, UserSummary sender, String kind, String body,
                               Media media, SharedPost post, SharedStory story, ReplyTo replyTo,
                               Instant createdAt, boolean edited, boolean unsent, List<Reaction> reactions,
-                              boolean canEdit) {
+                              boolean canEdit, String quote) {
     }
 
     public record Media(String url, int width, int height) {

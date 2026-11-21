@@ -103,7 +103,7 @@ public class SeedService {
                                collection_posts, saved_posts, reposts, comment_likes, search_history,
                                blocks, restricts, mutes, close_friends, story_sticker_responses, highlights,
                                highlight_items, post_tags, post_collaborators, post_views,
-                               events, user_topic_prefs
+                               events, user_topic_prefs, scheduled_posts, scheduled_messages, notes, ads
                                restart identity cascade
                 """);
 
@@ -115,18 +115,22 @@ public class SeedService {
         List<FakeUser> users = buildUsers(size.users(), rnd, ko, en, now);
         insertUsers(users, now);
 
-        List<FakeFollow> follows = buildFollows(users, rnd, now);
+        List<FakeFollow> follows = buildFollows(users, rnd, now, size);
         insertFollows(follows);
 
         var photos = seedPhotos.load();
         SeedPosts.Result content = new SeedPosts(jdbc, rnd, now, photos).generate(users, follows);
-        int reels = new SeedReels(jdbc, rnd, now, media.reels(), json).generate(users, follows);
+        int reels = new SeedReels(jdbc, rnd, now, media.reels(), json).density(size).generate(users, follows);
         recomputeCounts();
         SeedSocial.Result social = new SeedSocial(jdbc, rnd, now,
-                photos.values().stream().flatMap(List::stream).toList()).generate(users, follows);
+                photos.values().stream().flatMap(List::stream).toList()).density(size).generate(users, follows);
         new SeedExtras(jdbc, rnd, now, json).generate(users, follows);
         int events = new SeedEvents(jdbc, now, seed).generate();
+        SeedFeatures.Result features = new SeedFeatures(jdbc, rnd, now).generate();
+        log.info("M4-② 데이터: AI 프로필={}, AI 라벨 게시물={}, 광고={}, 노트={}, 시험 릴스={}", features.aiProfiles(),
+                features.aiPosts(), features.ads(), features.notes(), features.trialReels());
 
+        jdbc.execute("analyze"); // 대량으로 넣은 뒤 통계를 새로 (쿼리 계획이 틀어지지 않게)
         long elapsed = System.currentTimeMillis() - started;
         log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, 게시물={}, 좋아요={}, 댓글={}, "
                         + "릴스={}, 스토리={}, 대화방={}, 메시지={}, 알림={}, 이벤트={}, {}ms",
@@ -320,7 +324,7 @@ public class SeedService {
 
     // ---------------------------------------------------------------- 팔로우
 
-    private List<FakeFollow> buildFollows(List<FakeUser> users, Random rnd, Instant now) {
+    private List<FakeFollow> buildFollows(List<FakeUser> users, Random rnd, Instant now, SeedSize size) {
         int n = users.size();
         Set<Long> pairs = new HashSet<>();
         List<FakeFollow> follows = new ArrayList<>();
@@ -332,7 +336,7 @@ public class SeedService {
                 case INFLUENCER -> 8 + rnd.nextInt(13);
                 case BUSINESS -> 5 + rnd.nextInt(11);
             };
-            target = Math.min(target, n - 1);
+            target = Math.min(size.scale(target), n - 1);
 
             // 인기도 × 관심사 겹침 가중치로 팔로우 대상을 뽑는다 (중복 없이)
             double[] weights = new double[n];

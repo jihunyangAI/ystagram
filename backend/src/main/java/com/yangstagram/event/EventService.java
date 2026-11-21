@@ -21,10 +21,12 @@ public class EventService {
 
     /** 화면이 보낼 수 있는 종류. 좋아요·댓글·저장·공유·팔로우는 서버가 직접 남긴다 */
     public static final Set<String> CLIENT_TYPES = Set.of("IMPRESSION", "VIEW_TIME", "PROFILE_VISIT", "SKIP",
-            "NOT_INTERESTED");
-    public static final Set<String> SURFACES = Set.of("HOME", "EXPLORE", "REELS", "PROFILE", "POST", "SEARCH", "SIM");
+            "NOT_INTERESTED", "AD_CLICK", "AD_HIDE");
+    /** AD: 광고 자리에서 보인 노출 (광고 성과 집계용) */
+    public static final Set<String> SURFACES = Set.of("HOME", "EXPLORE", "REELS", "PROFILE", "POST", "SEARCH", "SIM",
+            "AD");
     public static final List<String> ALL_TYPES = List.of("IMPRESSION", "VIEW_TIME", "PROFILE_VISIT", "SKIP",
-            "NOT_INTERESTED", "LIKE", "COMMENT", "SAVE", "SHARE", "FOLLOW", "UNFOLLOW");
+            "NOT_INTERESTED", "LIKE", "COMMENT", "SAVE", "SHARE", "FOLLOW", "UNFOLLOW", "AD_CLICK", "AD_HIDE");
 
     private final NamedParameterJdbcTemplate jdbc;
     private final LabClock clock;

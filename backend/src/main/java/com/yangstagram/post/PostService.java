@@ -91,37 +91,53 @@ public class PostService {
 
     @Transactional
     public PostView create(long authorId, List<MultipartFile> files, CreatePostRequest req) {
+        List<StoredImage> images = validateAndStore(files, req);
+        return publish(authorId, images, req);
+    }
+
+    /** 만들기 요청을 검사하고 사진을 저장한다 (예약 게시도 여기서 미리 저장해 둔다) */
+    public List<StoredImage> validateAndStore(List<MultipartFile> files, CreatePostRequest req) {
         if (files == null || files.isEmpty()) {
             throw ApiException.badRequest("MEDIA_REQUIRED", "사진을 한 장 이상 선택해 주세요.");
         }
         if (files.size() > MAX_MEDIA) {
             throw ApiException.badRequest("TOO_MANY_MEDIA", "사진은 최대 " + MAX_MEDIA + "장까지 올릴 수 있습니다.");
         }
-        String caption = validateCaption(req.caption());
+        validateCaption(req.caption());
         String location = trimToNull(req.location());
         if (location != null && location.length() > MAX_LOCATION) {
             throw ApiException.badRequest("LOCATION_TOO_LONG", "위치 이름은 " + MAX_LOCATION + "자까지 쓸 수 있습니다.");
         }
-        List<String> altTexts = req.altTexts() == null ? List.of() : req.altTexts();
-
+        if (req.tags() != null && req.tags().size() > MAX_TAGS) {
+            throw ApiException.badRequest("TOO_MANY_TAGS", "사람 태그는 " + MAX_TAGS + "명까지 할 수 있습니다.");
+        }
         List<StoredImage> images = new ArrayList<>(files.size());
         for (MultipartFile file : files) {
             images.add(storage.saveImage(file));
         }
+        return images;
+    }
 
+    /** 저장해 둔 사진으로 게시물을 만든다 (바로 게시·예약 게시 공통). 게시 시각은 지금 */
+    @Transactional
+    public PostView publish(long authorId, List<StoredImage> images, CreatePostRequest req) {
+        String caption = validateCaption(req.caption());
+        String location = trimToNull(req.location());
+        if (location != null && location.length() > MAX_LOCATION) location = location.substring(0, MAX_LOCATION);
+        List<String> altTexts = req.altTexts() == null ? List.of() : req.altTexts();
         Instant now = Instant.now(clock);
         String shortcode = Shortcodes.random();
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, location_id, hide_like_count,
-                                   comments_disabled, created_at, updated_at, filter)
-                values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now, :filter)
+                                   comments_disabled, created_at, updated_at, filter, ai_labeled)
+                values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now, :filter, :ai)
                 returning id
                 """, new MapSqlParameterSource("code", shortcode).addValue("author", authorId)
                 .addValue("type", images.size() > 1 ? "CAROUSEL" : "PHOTO").addValue("caption", caption)
                 .addValue("location", location == null ? null : locationId(location, now))
                 .addValue("hide", req.hideLikes()).addValue("noComments", req.noComments())
                 .addValue("filter", req.filter() == null || req.filter().length() > 20 ? null : req.filter())
-                .addValue("now", Timestamp.from(now)), Long.class);
+                .addValue("ai", req.ai()).addValue("now", Timestamp.from(now)), Long.class);
 
         for (int i = 0; i < images.size(); i++) {
             StoredImage img = images.get(i);
@@ -160,7 +176,7 @@ public class PostService {
                     Map.of("u", t.username().strip().toLowerCase().replace("@", "")), Long.class);
             if (ids.isEmpty()) continue;
             long uid = ids.getFirst();
-            if (followService.blocked(authorId, uid) || !done.add(uid)) continue;
+            if (followService.blocked(authorId, uid) || !done.add(uid) || !reachable(uid, authorId)) continue;
             int index = t.mediaIndex() == null ? 0 : Math.max(0, Math.min(mediaCount - 1, t.mediaIndex()));
             double x = t.x() == null ? 0.5 : Math.max(0, Math.min(1, t.x()));
             double y = t.y() == null ? 0.5 : Math.max(0, Math.min(1, t.y()));
@@ -171,6 +187,14 @@ public class PostService {
                     .addValue("x", x).addValue("y", y));
             notifications.notify(uid, authorId, NotificationType.TAG, postId, null, null, null);
         }
+    }
+
+    /** 10대 계정은 자기가 팔로우하는 사람에게서만 태그·초대를 받는다 */
+    private boolean reachable(long userId, long actorId) {
+        Integer n = jdbc.queryForObject("select count(*) from users u where u.id = :u and "
+                + com.yangstagram.user.Teens.reachableBy("u", ":actor"), Map.of("u", userId, "actor", actorId),
+                Integer.class);
+        return n != null && n > 0;
     }
 
     /** 공동 작업자 초대: 받은 사람이 수락하면 그 사람 프로필과 팔로워 피드에도 보인다 */
@@ -185,7 +209,8 @@ public class PostService {
         for (String name : names) {
             List<Long> ids = jdbc.queryForList("select id from users where username = :u and deleted_at is null",
                     Map.of("u", name), Long.class);
-            if (ids.isEmpty() || ids.getFirst() == authorId || followService.blocked(authorId, ids.getFirst())) continue;
+            if (ids.isEmpty() || ids.getFirst() == authorId || followService.blocked(authorId, ids.getFirst())
+                    || !reachable(ids.getFirst(), authorId)) continue;
             jdbc.update("""
                     insert into post_collaborators (post_id, user_id, status, created_at) values (:p, :u, 'PENDING', :now)
                     on conflict do nothing
@@ -238,12 +263,14 @@ public class PostService {
         Instant now = Instant.now(clock);
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, hide_like_count, comments_disabled,
-                                   recommendable, created_at, updated_at)
-                values (:code, :author, 'REEL', :caption, :hide, :noComments, :rec, :now, :now) returning id
+                                   recommendable, created_at, updated_at, ai_labeled, trial)
+                values (:code, :author, 'REEL', :caption, :hide, :noComments, :rec, :now, :now, :ai, :trial) returning id
                 """, new MapSqlParameterSource("code", Shortcodes.random()).addValue("author", authorId)
                 .addValue("caption", caption).addValue("hide", Boolean.TRUE.equals(req.hideLikeCount()))
                 .addValue("noComments", Boolean.TRUE.equals(req.commentsDisabled()))
-                .addValue("rec", duration <= RECOMMEND_LIMIT_MS).addValue("now", Timestamp.from(now)), Long.class);
+                .addValue("rec", duration <= RECOMMEND_LIMIT_MS).addValue("now", Timestamp.from(now))
+                .addValue("ai", Boolean.TRUE.equals(req.aiLabel())).addValue("trial", Boolean.TRUE.equals(req.trial())),
+                Long.class);
         jdbc.update("""
                 insert into post_media (post_id, position, url, thumb_url, width, height, media_type, duration_ms)
                 values (:p, 0, :url, :thumb, :w, :h, 'VIDEO', :d)
@@ -296,7 +323,21 @@ public class PostService {
             set.append(", comments_disabled = :noComments");
             p.addValue("noComments", req.commentsDisabled());
         }
+        if (req.aiLabel() != null) {
+            set.append(", ai_labeled = :ai");
+            p.addValue("ai", req.aiLabel());
+        }
         jdbc.update("update posts set " + set + " where id = :id", p);
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
+    /** 시험 릴스를 팔로워에게도 공유한다 (되돌릴 수 없음) */
+    @Transactional
+    public PostView shareTrial(String shortcode, long viewerId) {
+        PostRow row = getOwn(shortcode, viewerId);
+        int n = jdbc.update("update posts set trial = false, trial_shared_at = :now where id = :id and trial",
+                new MapSqlParameterSource("id", row.id()).addValue("now", Timestamp.from(Instant.now(clock))));
+        if (n == 0) throw ApiException.badRequest("NOT_TRIAL", "시험 릴스가 아닙니다.");
         return queries.views(List.of(row.id()), viewerId).getFirst();
     }
 

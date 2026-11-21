@@ -48,6 +48,9 @@ public class UserService {
 
         User user = User.signUp(username, email, passwordEncoder.encode(req.password()),
                 req.fullName().trim(), req.birthDate(), Instant.now(clock));
+        if (Teens.isTeen(req.birthDate(), today)) {
+            user.setPrivateAccount(true); // 10대 계정은 비공개로 시작
+        }
         return userRepository.save(user);
     }
 

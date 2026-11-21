@@ -54,6 +54,9 @@ public final class PostDtos {
      * @param previewComments 피드 카드 아래에 보여 줄 최근 댓글 최대 2개
      * @param repost          피드에서 팔로우하는 사람의 리포스트로 들어온 경우 (아니면 null)
      * @param authorStory     작성자 프로필 사진 둘레의 스토리 링
+     * @param aiLabeled       "AI 정보" 라벨
+     * @param trial           시험 릴스 (팔로워에게 안 보임, 작성자에게만 표시)
+     * @param ad              광고로 들어온 경우 (아니면 null)
      */
     public record PostView(long id, String shortcode, UserSummary author, Relationship authorRelationship,
                            String caption, LocationView location, List<MediaView> media,
@@ -62,15 +65,31 @@ public final class PostDtos {
                            List<CommentView> previewComments, boolean savedByMe, boolean repostedByMe,
                            int repostCount, Repost repost, Ring authorStory, String type, int viewCount,
                            List<TagView> tags, List<UserSummary> collaborators, boolean collabInvite,
-                           Ranking ranking) {
+                           boolean aiLabeled, boolean trial, AdInfo ad, Ranking ranking) {
 
         /** 추천 영역에서 줄 세운 이유를 붙인 복사본 */
         public PostView withRanking(Ranking r) {
             return new PostView(id, shortcode, author, authorRelationship, caption, location, media, likeCount,
                     commentCount, likedByMe, likedBy, hideLikeCount, commentsDisabled, createdAt, mine,
                     previewComments, savedByMe, repostedByMe, repostCount, repost, authorStory, type, viewCount, tags,
-                    collaborators, collabInvite, r);
+                    collaborators, collabInvite, aiLabeled, trial, ad, r);
         }
+
+        /** 광고로 끼워 넣을 때 */
+        public PostView withAd(AdInfo a) {
+            return new PostView(id, shortcode, author, authorRelationship, caption, location, media, likeCount,
+                    commentCount, likedByMe, likedBy, hideLikeCount, commentsDisabled, createdAt, mine,
+                    previewComments, savedByMe, repostedByMe, repostCount, repost, authorStory, type, viewCount, tags,
+                    collaborators, collabInvite, aiLabeled, trial, a, ranking);
+        }
+    }
+
+    /**
+     * 가짜 광고 정보.
+     *
+     * @param reason "이 광고가 표시되는 이유" 한 줄
+     */
+    public record AdInfo(long id, String headline, String cta, String reason) {
     }
 
     /** 피드에서 "OOO님이 리포스트함"으로 보일 때 */
@@ -100,7 +119,12 @@ public final class PostDtos {
      */
     public record CreatePostRequest(String caption, String location, List<String> altTexts,
                                     Boolean hideLikeCount, Boolean commentsDisabled, List<TagInput> tags,
-                                    List<String> collaborators, String filter) {
+                                    List<String> collaborators, String filter, Boolean aiLabel,
+                                    Instant scheduledAt) {
+
+        public boolean ai() {
+            return Boolean.TRUE.equals(aiLabel);
+        }
 
         public boolean hideLikes() {
             return Boolean.TRUE.equals(hideLikeCount);
@@ -111,12 +135,18 @@ public final class PostDtos {
         }
     }
 
-    /** 릴스 만들기 (영상은 video, 첫 화면 사진은 poster 파트) */
-    public record CreateReelRequest(String caption, Long durationMs, Boolean hideLikeCount, Boolean commentsDisabled) {
+    /**
+     * 릴스 만들기 (영상은 video, 첫 화면 사진은 poster 파트).
+     *
+     * @param trial 시험 릴스: 팔로워가 아닌 사람에게만 보여 주고 24시간 뒤 성과를 본다
+     */
+    public record CreateReelRequest(String caption, Long durationMs, Boolean hideLikeCount, Boolean commentsDisabled,
+                                    Boolean aiLabel, Boolean trial) {
     }
 
     /** 게시 후 수정: 캡션·위치·고급 설정 */
-    public record UpdatePostRequest(String caption, String location, Boolean hideLikeCount, Boolean commentsDisabled) {
+    public record UpdatePostRequest(String caption, String location, Boolean hideLikeCount, Boolean commentsDisabled,
+                                    Boolean aiLabel) {
     }
 
     public record CreateCommentRequest(String body, Long parentId) {

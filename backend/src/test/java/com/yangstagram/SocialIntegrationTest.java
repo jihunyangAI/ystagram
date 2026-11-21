@@ -320,7 +320,7 @@ class SocialIntegrationTest {
                 from follows fr
                 join users r on r.id = fr.following_id
                 join users f on f.id = fr.follower_id
-                join posts p on p.author_id <> r.id and p.author_id <> f.id and p.deleted_at is null
+                join posts p on p.author_id <> r.id and p.author_id <> f.id and p.deleted_at is null and not p.trial
                 join users a on a.id = p.author_id and not a.is_private
                 where fr.status = 'ACCEPTED' and not exists (
                   select 1 from follows x where x.follower_id = f.id and x.following_id = a.id)

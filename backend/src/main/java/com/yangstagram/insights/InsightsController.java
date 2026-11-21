@@ -146,7 +146,18 @@ public class InsightsController {
 
     public record PostInsights(String shortcode, long reach, long impressions, long likes, long comments, long saves,
                                long shares, long profileVisits, Long avgWatchMs, Double completion, Integer durationMs,
-                               List<Share> surfaces, List<Day> daily) {
+                               List<Share> surfaces, List<Day> daily, Trial trial) {
+    }
+
+    /**
+     * 시험 릴스 정보 (시험 릴스였던 게시물만, 아니면 null).
+     *
+     * @param active          아직 팔로워에게 공유하지 않음
+     * @param resultsAt       성과를 볼 수 있는 시각 (올리고 24시간 뒤)
+     * @param ready           성과 공개 여부 (공개 전에는 화면이 숫자를 가린다)
+     * @param nonFollowerReach 도달 중 팔로워가 아닌 사람 수
+     */
+    public record Trial(boolean active, Instant resultsAt, boolean ready, Instant sharedAt, long nonFollowerReach) {
     }
 
     /** 게시물 인사이트 (작성자만) */
@@ -155,7 +166,7 @@ public class InsightsController {
         long me = CurrentUser.requireId();
         Map<String, Object> row = jdbc.queryForList("""
                 select p.id, p.author_id, p.like_count, p.comment_count, p.save_count, p.created_at,
-                       m.duration_ms
+                       p.trial, p.trial_shared_at, m.duration_ms
                 from posts p left join post_media m on m.post_id = p.id and m.position = 0
                 where p.shortcode = :code and p.deleted_at is null
                 """, Map.of("code", shortcode)).stream().findFirst()
@@ -205,13 +216,27 @@ public class InsightsController {
         List<Day> daily = new ArrayList<>();
         byDay.forEach((day, r) -> daily.add(new Day(day, r[0], r[1], 0, 0)));
 
+        Trial trial = null;
+        Timestamp sharedAt = (Timestamp) row.get("trial_shared_at");
+        if (Boolean.TRUE.equals(row.get("trial")) || sharedAt != null) {
+            Instant resultsAt = created.plus(Duration.ofHours(24));
+            Long nonFollowers = jdbc.queryForObject("""
+                    select count(distinct e.user_id) from events e
+                    where e.post_id = :id and e.type = 'IMPRESSION' and not exists (
+                      select 1 from follows f where f.follower_id = e.user_id and f.following_id = :me
+                      and f.status = 'ACCEPTED')
+                    """, p, Long.class);
+            trial = new Trial(sharedAt == null, resultsAt, !Instant.now(clock).isBefore(resultsAt),
+                    sharedAt == null ? null : sharedAt.toInstant(), nonFollowers == null ? 0 : nonFollowers);
+        }
+
         Number avg = (Number) agg.get("avg_watch");
         return new PostInsights(shortcode, ((Number) agg.get("reach")).longValue(),
                 ((Number) agg.get("impressions")).longValue(), ((Number) row.get("like_count")).longValue(),
                 ((Number) row.get("comment_count")).longValue(), ((Number) row.get("save_count")).longValue(),
                 ((Number) agg.get("shares")).longValue(), visits == null ? 0 : visits,
                 avg == null ? null : avg.longValue(), completion == null ? null : Math.round(completion * 1000) / 1000.0,
-                duration, surfaces, daily);
+                duration, surfaces, daily, trial);
     }
 
     // ------------------------------------------------------------ 보조
@@ -273,6 +298,7 @@ public class InsightsController {
             case "POST" -> "게시물";
             case "SEARCH" -> "검색";
             case "SIM" -> "시뮬레이터";
+            case "AD" -> "광고";
             default -> "기타";
         };
     }

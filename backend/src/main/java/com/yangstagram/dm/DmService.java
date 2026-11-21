@@ -34,6 +34,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.yangstagram.user.Teens;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -61,7 +63,15 @@ public class DmService {
     private final MediaStorage storage;
     private final LabClock clock;
 
-    public DmService(NamedParameterJdbcTemplate jdbc, Realtime realtime, MediaStorage storage, LabClock clock) {
+    /** 메시지를 보낸 뒤 (자동 응답 봇 등이 듣는다, 트랜잭션이 끝난 뒤 처리) */
+    public record MessageSent(long conversationId, long senderId, long messageId, String kind, String body) {
+    }
+
+    private final ApplicationEventPublisher events;
+
+    public DmService(NamedParameterJdbcTemplate jdbc, Realtime realtime, MediaStorage storage, LabClock clock,
+                     ApplicationEventPublisher events) {
+        this.events = events;
         this.jdbc = jdbc;
         this.realtime = realtime;
         this.storage = storage;
@@ -150,6 +160,7 @@ public class DmService {
         }
         Timestamp now = Timestamp.from(Instant.now(clock));
         long id;
+        for (Long other : ids) requireTeenReachable(me, other);
         if (ids.size() == 1) {
             long other = ids.getFirst();
             requireNotBlocked(me, other);
@@ -194,6 +205,16 @@ public class DmService {
                 """, Map.of("a", me, "b", other), Integer.class);
         if (n != null && n > 0) {
             throw ApiException.forbidden("BLOCKED", "이 계정과는 메시지를 주고받을 수 없습니다.");
+        }
+    }
+
+    /** 10대 계정은 자기가 팔로우하는 사람에게서만 메시지를 받는다 (기획서 §6.6) */
+    private void requireTeenReachable(long me, long other) {
+        Integer n = jdbc.queryForObject("select count(*) from users u where u.id = :o and "
+                + Teens.reachableBy("u", ":me"), Map.of("o", other, "me", me), Integer.class);
+        if (n == null || n == 0) {
+            throw ApiException.forbidden("TEEN_PROTECTED",
+                    "10대 계정 보호: 상대가 회원님을 팔로우해야 메시지를 보낼 수 있습니다.");
         }
     }
 
@@ -301,7 +322,7 @@ public class DmService {
                 });
         return list.stream().map(m -> new MessageView(m.id(), m.conversationId(), m.sender(), m.kind(), m.body(),
                 m.media(), m.post(), m.story(), m.replyTo(), m.createdAt(), m.edited(), m.unsent(),
-                reactions.getOrDefault(m.id(), List.of()), m.canEdit())).toList();
+                reactions.getOrDefault(m.id(), List.of()), m.canEdit(), m.quote())).toList();
     }
 
     private MessageView readMessage(ResultSet rs, long me, Instant now) throws SQLException {
@@ -340,7 +361,8 @@ public class DmService {
                 unsent ? null : rs.getString("body"), media, post, story, replyTo, createdAt,
                 rs.getTimestamp("edited_at") != null, unsent, List.of(),
                 mine && !unsent && "TEXT".equals(rs.getString("kind"))
-                        && Duration.between(createdAt, now).compareTo(PostQueries.EDIT_WINDOW) <= 0);
+                        && Duration.between(createdAt, now).compareTo(PostQueries.EDIT_WINDOW) <= 0,
+                unsent ? null : rs.getString("quote"));
     }
 
     private static String kindLabel(String kind) {
@@ -348,6 +370,7 @@ public class DmService {
             case "IMAGE" -> "사진";
             case "POST" -> "게시물";
             case "STORY_REPLY" -> "스토리 답장";
+            case "NOTE_REPLY" -> "노트 답장";
             default -> "";
         };
     }
@@ -401,8 +424,21 @@ public class DmService {
         return insert(c.id(), me, "STORY_REPLY", body, null, null, storyId, null);
     }
 
+    /** 노트 답장: 노트 주인과의 1:1 대화방으로, 원래 노트 문구를 함께 남긴다 */
+    @Transactional
+    public MessageView noteReply(long me, String ownerUsername, String noteBody, String rawBody) {
+        String body = validBody(rawBody, true);
+        ConversationView c = open(me, List.of(ownerUsername), null);
+        return insert(c.id(), me, "NOTE_REPLY", body, null, null, null, null, noteBody);
+    }
+
     private MessageView insert(long conversationId, long me, String kind, String body, StoredImage img, Long postId,
                                Long storyId, Long replyToId) {
+        return insert(conversationId, me, kind, body, img, postId, storyId, replyToId, null);
+    }
+
+    private MessageView insert(long conversationId, long me, String kind, String body, StoredImage img, Long postId,
+                               Long storyId, Long replyToId, String quote) {
         membership(conversationId, me);
         requireCanSend(conversationId, me);
         if (replyToId != null) {
@@ -413,13 +449,13 @@ public class DmService {
         Timestamp now = Timestamp.from(Instant.now(clock));
         Long id = jdbc.queryForObject("""
                 insert into messages (conversation_id, sender_id, kind, body, media_url, media_width, media_height,
-                                      post_id, story_id, reply_to_id, created_at)
-                values (:c, :me, :kind, :body, :url, :w, :h, :post, :story, :reply, :now) returning id
+                                      post_id, story_id, reply_to_id, created_at, quote)
+                values (:c, :me, :kind, :body, :url, :w, :h, :post, :story, :reply, :now, :quote) returning id
                 """, new MapSqlParameterSource("c", conversationId).addValue("me", me).addValue("kind", kind)
                 .addValue("body", body).addValue("url", img == null ? null : img.url())
                 .addValue("w", img == null ? null : img.width()).addValue("h", img == null ? null : img.height())
                 .addValue("post", postId).addValue("story", storyId).addValue("reply", replyToId)
-                .addValue("now", now), Long.class);
+                .addValue("now", now).addValue("quote", quote), Long.class);
         jdbc.update("update conversations set last_message_at = :now where id = :c",
                 new MapSqlParameterSource("now", now).addValue("c", conversationId));
         // 내가 보낸 메시지까지는 읽은 것으로, 요청함에서 답장하면 수락한 것으로
@@ -432,6 +468,7 @@ public class DmService {
         restoreDirectMembers(conversationId, me, now);
         MessageView view = message(id, me);
         realtime.send(memberIds(conversationId), "message:new", view);
+        events.publishEvent(new MessageSent(conversationId, me, id, kind, body));
         return view;
     }
 
@@ -451,7 +488,10 @@ public class DmService {
         if (key == null) return;
         for (String part : key.split(":")) {
             long uid = Long.parseLong(part);
-            if (uid != me) requireNotBlocked(me, uid);
+            if (uid != me) {
+                requireNotBlocked(me, uid);
+                requireTeenReachable(me, uid);
+            }
         }
     }
 

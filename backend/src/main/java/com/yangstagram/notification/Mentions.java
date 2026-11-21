@@ -41,8 +41,9 @@ public class Mentions {
         Set<String> names = extract(text);
         if (names.isEmpty()) return;
         List<Long> ids = jdbc.queryForList(
-                "select id from users where username in (:names) and deleted_at is null",
-                Map.of("names", names), Long.class);
+                "select u.id from users u where u.username in (:names) and u.deleted_at is null and "
+                        + com.yangstagram.user.Teens.reachableBy("u", ":actor"),
+                Map.of("names", names, "actor", actor), Long.class);
         for (Long id : ids) {
             if (!exclude.contains(id)) {
                 notifications.notify(id, actor, NotificationType.MENTION, postId, commentId, null, text);

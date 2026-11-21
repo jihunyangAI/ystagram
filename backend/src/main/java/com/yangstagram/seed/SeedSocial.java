@@ -29,6 +29,13 @@ final class SeedSocial {
     private final Instant now;
     private final List<Photo> photos;
 
+    private SeedSize size = SeedSize.MEDIUM;
+
+    SeedSocial density(SeedSize size) {
+        this.size = size;
+        return this;
+    }
+
     SeedSocial(JdbcTemplate jdbc, Random rnd, Instant now, List<Photo> photos) {
         this.jdbc = jdbc;
         this.rnd = rnd;
@@ -206,7 +213,7 @@ final class SeedSocial {
             }
         }
         java.util.Collections.shuffle(mutual, rnd);
-        int target = Math.min(mutual.size(), users.size() * 5 / 2);
+        int target = Math.min(mutual.size(), size.density() > 1 ? users.size() * 4 : users.size() * 5 / 2);
         List<Long> publicPosts = jdbc.queryForList("""
                 select p.id from posts p join users a on a.id = p.author_id
                 where not a.is_private and p.deleted_at is null order by p.like_count desc limit 300
@@ -234,7 +241,7 @@ final class SeedSocial {
 
         for (long[] members : groups) {
             boolean group = members.length > 2;
-            int count = 3 + rnd.nextInt(group ? 30 : 25);
+            int count = size.scale(3 + rnd.nextInt(group ? 30 : 25));
             Instant t = now.minus(Duration.ofMinutes(60 + rnd.nextInt(30 * 24 * 60)));
             long firstMsg = msgId;
             List<Long> senders = new ArrayList<>();
