@@ -67,6 +67,14 @@ final class SeedSocial {
 
     // ------------------------------------------------------------ 스토리
 
+    /** 스토리 사진: 그 사람의 관심 주제 사진 (없으면 전체) */
+    private List<Photo> storyPhotos(FakeUser u) {
+        java.util.Set<String> topics = new java.util.HashSet<>();
+        u.interests.forEach(t -> topics.add(t.name()));
+        List<Photo> mine = photos.stream().filter(p -> p.topic() != null && topics.contains(p.topic())).toList();
+        return mine.isEmpty() ? photos : mine;
+    }
+
     /** 활성 스토리(최근 24시간 안) + 지난 30일의 만료된 스토리(아카이브용) */
     private int stories(List<FakeUser> users, Map<Long, List<Long>> followers) {
         if (photos.isEmpty()) return 0;
@@ -81,18 +89,19 @@ final class SeedSocial {
                 case REGULAR -> 0.35;
                 case LURKER -> 0.05;
             };
+            List<Photo> mine = storyPhotos(u);
             if (rnd.nextDouble() < activeChance) {
                 int n = 1 + rnd.nextInt(u.persona == SeedService.Persona.INFLUENCER ? 6 : 3);
                 Instant t = now.minus(Duration.ofMinutes(10 + rnd.nextInt(23 * 60)));
                 for (int i = 0; i < n && t.isBefore(now); i++) {
-                    list.add(new Story(id++, u.id, photos.get(rnd.nextInt(photos.size())), t));
+                    list.add(new Story(id++, u.id, mine.get(rnd.nextInt(mine.size())), t));
                     t = t.plus(Duration.ofMinutes(3 + rnd.nextInt(90)));
                 }
             }
             int archived = u.persona == SeedService.Persona.LURKER ? rnd.nextInt(2) : rnd.nextInt(8);
             for (int i = 0; i < archived; i++) {
                 Instant t = now.minus(Duration.ofHours(25 + rnd.nextInt(30 * 24)));
-                list.add(new Story(id++, u.id, photos.get(rnd.nextInt(photos.size())), t));
+                list.add(new Story(id++, u.id, mine.get(rnd.nextInt(mine.size())), t));
             }
         }
         jdbc.batchUpdate("""

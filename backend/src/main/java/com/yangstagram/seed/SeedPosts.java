@@ -55,6 +55,8 @@ final class SeedPosts {
         double quality;
         List<Photo> photos;
         List<String> tags;
+        /** 첫 사진에 찍힌 대상 (댓글에 쓴다) */
+        String label;
     }
 
     private record FakeLike(long userId, long postId, Instant createdAt) {
@@ -68,6 +70,10 @@ final class SeedPosts {
     private final Instant now;
     private final Map<String, List<Photo>> photosByRatio;
     private final List<Photo> allPhotos;
+    /** 주제별 사진 (주제가 있는 사진 목록일 때) */
+    private final Map<Topic, List<Photo>> photosByTopic = new HashMap<>();
+    /** 사람마다 팔로우하는 사람 (캡션의 친구 멘션용) */
+    private final Map<FakeUser, List<FakeUser>> following = new HashMap<>();
 
     SeedPosts(JdbcTemplate jdbc, Random rnd, Instant now, Map<String, List<Photo>> photosByRatio) {
         this.jdbc = jdbc;
@@ -75,6 +81,14 @@ final class SeedPosts {
         this.now = now;
         this.photosByRatio = photosByRatio;
         this.allPhotos = photosByRatio.values().stream().flatMap(List::stream).toList();
+        for (Photo p : allPhotos) {
+            if (p.topic() == null) continue;
+            try {
+                photosByTopic.computeIfAbsent(Topic.valueOf(p.topic()), k -> new ArrayList<>()).add(p);
+            } catch (IllegalArgumentException ignored) {
+                // 모르는 주제
+            }
+        }
     }
 
     Result generate(List<FakeUser> users, List<FakeFollow> follows) {
@@ -86,6 +100,7 @@ final class SeedPosts {
         for (FakeFollow f : follows) {
             if (f.status().equals("ACCEPTED")) {
                 followers.get(f.following()).add(f.follower());
+                following.computeIfAbsent(f.follower(), k -> new ArrayList<>()).add(f.following());
             }
         }
 
@@ -133,14 +148,15 @@ final class SeedPosts {
                 } while (!codes.add(p.shortcode));
                 p.createdAt = postTime(u);
                 p.quality = Math.exp(rnd.nextGaussian() * 0.45) * (rnd.nextDouble() < 0.03 ? 2.2 : 1.0);
-                p.photos = pickPhotos(u);
-                p.type = p.photos.size() > 1 ? "CAROUSEL" : "PHOTO";
                 Topic topic = u.interests.get(rnd.nextInt(u.interests.size()));
+                p.photos = pickPhotos(u, topic);
+                p.type = p.photos.size() > 1 ? "CAROUSEL" : "PHOTO";
+                p.label = p.photos.getFirst().label();
                 p.tags = pickTags(topic, u);
-                p.caption = caption(topic, u, p.tags);
                 p.topic = topic;
                 p.locationId = rnd.nextDouble() < (u.persona == Persona.BUSINESS ? 0.6 : 0.35)
                         ? 1L + rnd.nextInt(SeedText.LOCATIONS.size()) : null;
+                p.caption = caption(topic, u, p);
                 p.hideLikeCount = rnd.nextDouble() < (u.persona == Persona.INFLUENCER ? 0.10 : 0.03);
                 p.commentsDisabled = rnd.nextDouble() < 0.02;
                 posts.add(p);
@@ -171,14 +187,21 @@ final class SeedPosts {
         return result.isAfter(now) ? now.minus(Duration.ofMinutes(5 + rnd.nextInt(120))) : result;
     }
 
-    /** 캐러셀은 같은 비율 사진끼리 (인스타그램은 첫 장 비율로 통일) */
-    private List<Photo> pickPhotos(FakeUser u) {
-        Photo first = allPhotos.get(rnd.nextInt(allPhotos.size()));
+    /**
+     * 게시물 주제의 사진을 고른다. 캐러셀은 같은 비율끼리 (인스타그램은 첫 장 비율로 통일)이고,
+     * 되도록 같은 대상(같은 가게에서 찍은 여러 장처럼)으로 묶는다.
+     */
+    private List<Photo> pickPhotos(FakeUser u, Topic topic) {
+        List<Photo> pool = photosByTopic.getOrDefault(topic, allPhotos);
+        if (pool.isEmpty()) pool = allPhotos;
+        Photo first = pool.get(rnd.nextInt(pool.size()));
         int count = 1;
         if (rnd.nextDouble() > 0.72) {
             count = 2 + rnd.nextInt(u.persona == Persona.INFLUENCER ? 8 : 4);
         }
-        List<Photo> group = photosByRatio.get(first.ratio());
+        List<Photo> group = pool.stream().filter(p -> p.ratio().equals(first.ratio())).toList();
+        List<Photo> same = group.stream().filter(p -> java.util.Objects.equals(p.label(), first.label())).toList();
+        if (same.size() >= Math.min(count, 3)) group = same;
         LinkedHashSet<Photo> chosen = new LinkedHashSet<>();
         chosen.add(first);
         int guard = 0;
@@ -202,23 +225,13 @@ final class SeedPosts {
         return tags;
     }
 
-    private String caption(Topic topic, FakeUser u, List<String> tags) {
-        if (rnd.nextDouble() < 0.08 && tags.isEmpty()) {
-            return null; // 캡션 없이 사진만
-        }
-        StringBuilder sb = new StringBuilder();
-        List<String> lines = SeedText.CAPTIONS.get(topic);
-        sb.append(lines.get(rnd.nextInt(lines.size())));
-        String tail = SeedText.TAILS.get(rnd.nextInt(SeedText.TAILS.size()));
-        if (!tail.isEmpty()) sb.append(' ').append(tail);
-        if (u.persona == Persona.BUSINESS) {
-            sb.append("\n\n📍 매장 위치와 영업시간은 프로필에서 확인해 주세요");
-        }
-        if (!tags.isEmpty()) {
-            sb.append(rnd.nextBoolean() ? "\n\n" : " ");
-            sb.append(String.join(" ", tags.stream().map(t -> "#" + t).toList()));
-        }
-        return sb.toString();
+    private String caption(Topic topic, FakeUser u, FakePost p) {
+        String place = p.locationId == null ? null : SeedText.LOCATIONS.get((int) (p.locationId - 1))[0];
+        List<FakeUser> friends = following.getOrDefault(u, List.of());
+        String friend = !friends.isEmpty() && rnd.nextDouble() < 0.5
+                ? friends.get(rnd.nextInt(friends.size())).username : null;
+        String shop = u.persona == Persona.BUSINESS ? u.fullName : null;
+        return SeedCaptions.caption(new SeedCaptions.Ctx(topic, p.label, place, friend, u.persona, shop), rnd, p.tags);
     }
 
     // ------------------------------------------------------------ 좋아요·댓글
@@ -269,14 +282,16 @@ final class SeedPosts {
             double chance = (u.persona == Persona.LURKER ? 0.03 : 0.11) * Math.min(2, post.quality);
             if (rnd.nextDouble() >= chance) continue;
             Instant at = later(like.createdAt());
+            // 친구를 부르는 댓글용: 이 게시물에 좋아요 누른 다른 사람
+            FakeUser other = byId.get(likes.get(rnd.nextInt(likes.size())).userId());
+            String friend = other == u || other == post.author ? null : other.username;
             FakeComment c = new FakeComment(nextId[0]++, post.id, u.id, null,
-                    SeedText.COMMENTS.get(rnd.nextInt(SeedText.COMMENTS.size())), at);
+                    SeedCaptions.comment(post.topic, post.label, friend, rnd), at);
             comments.add(c);
             // 게시물 주인의 답글
             if (post.author.persona != Persona.LURKER && rnd.nextDouble() < 0.25) {
                 comments.add(new FakeComment(nextId[0]++, post.id, post.author.id, c.id(),
-                        "@" + u.username + " " + SeedText.REPLIES.get(rnd.nextInt(SeedText.REPLIES.size())),
-                        later(at)));
+                        SeedCaptions.reply(u.username, rnd), later(at)));
             }
         }
         return comments;

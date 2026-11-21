@@ -7,7 +7,8 @@ import com.yangstagram.dm.DmService;
 import com.yangstagram.follow.FollowService;
 import com.yangstagram.post.PostService;
 import com.yangstagram.post.Shortcodes;
-import com.yangstagram.seed.SeedText;
+import com.yangstagram.seed.SeedCaptions;
+import com.yangstagram.seed.SeedPhotos;
 import com.yangstagram.seed.Topic;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -87,8 +88,11 @@ public class ActivitySimulator {
     private long total;
     private long lastRun;
 
+    private final SeedPhotos seedPhotos;
+
     public ActivitySimulator(NamedParameterJdbcTemplate jdbc, PostService posts, CommentService comments,
-                             FollowService follows, DmService dms, LabClock clock) {
+                             FollowService follows, DmService dms, LabClock clock, SeedPhotos seedPhotos) {
+        this.seedPhotos = seedPhotos;
         this.jdbc = jdbc;
         this.posts = posts;
         this.comments = comments;
@@ -182,7 +186,7 @@ public class ActivitySimulator {
             case COMMENT -> {
                 Post p = focus != null ? postOf(focus, actor) : followeePost(actor);
                 if (p == null) yield null;
-                String body = SeedText.COMMENTS.get(rnd.nextInt(SeedText.COMMENTS.size()));
+                String body = SeedCaptions.comment(topicOf(p.code()), null, null, rnd);
                 comments.create(p.code(), actor, body, null);
                 yield new LogEntry(now, me, action, p.author(), "“" + body + "”", true);
             }
@@ -279,13 +283,18 @@ public class ActivitySimulator {
 
     // ------------------------------------------------------------ 만들기 (시드 사진 재사용)
 
+    private Topic topicOf(String shortcode) {
+        String t = jdbc.queryForList("select topic from posts where shortcode = :c", Map.of("c", shortcode), String.class)
+                .stream().findFirst().orElse(null);
+        try {
+            return t == null ? null : Topic.valueOf(t);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     @Transactional
     String createPost(long actor, Instant now) {
-        Map<String, Object> media = jdbc.queryForList("""
-                select m.url, m.thumb_url, m.width, m.height from post_media m join posts p on p.id = m.post_id
-                where p.type <> 'REEL' and m.media_type = 'IMAGE' order by random() limit 1
-                """, Map.of()).stream().findFirst()
-                .orElseThrow(() -> ApiException.badRequest("NO_MEDIA", "재사용할 사진이 없습니다."));
         String interests = jdbc.queryForObject("select coalesce(interests, '') from users where id = :a",
                 Map.of("a", actor), String.class);
         Topic topic = Topic.values()[rnd.nextInt(Topic.values().length)];
@@ -295,8 +304,11 @@ public class ActivitySimulator {
                 break;
             }
         }
-        List<String> lines = SeedText.CAPTIONS.get(topic);
-        String caption = lines.get(rnd.nextInt(lines.size()));
+        // 주제에 맞는 시드 사진과, 그 사진에 맞는 캡션
+        SeedPhotos.Photo photo = seedPhotos.randomFor(topic, rnd);
+        Map<String, Object> media = Map.of("url", photo.url(), "thumb_url", photo.thumbUrl(), "width", photo.width(),
+                "height", photo.height());
+        String caption = SeedCaptions.simpleCaption(topic, photo.label(), rnd);
         String code = Shortcodes.random();
         Long id = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, created_at, updated_at, topic)

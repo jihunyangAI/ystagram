@@ -14,18 +14,40 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 가짜 게시물에 쓸 사진 목록.
- * seed-media/photos/manifest.json(download.mjs가 만듦)이 있으면 그 사진을,
+ * seed-media/photos/manifest.json(download.mjs가 만듦)이 있으면 그 사진을 (주제·찍은 대상 포함),
  * 없으면 서버가 그려 주는 그라데이션 그림(/media/ph)을 쓴다 → 사진을 안 받아도 시드는 동작.
  */
 @Component
-class SeedPhotos {
+public class SeedPhotos {
 
     private static final Logger log = LoggerFactory.getLogger(SeedPhotos.class);
 
-    record Photo(String url, String thumbUrl, int width, int height, String ratio) {
+    /**
+     * @param topic 주제 (Topic 이름, 예전 사진·그라데이션 그림이면 null)
+     * @param label 찍은 대상의 한국어 이름 (캡션의 {item}, 예: 수제버거)
+     */
+    public record Photo(String url, String thumbUrl, int width, int height, String ratio, String topic,
+                        String label) {
     }
 
-    record ManifestEntry(String file, String thumb, int width, int height, String ratio) {
+    private volatile Map<String, List<Photo>> byTopicCache;
+
+    /** 주제에 맞는 사진 하나 (시뮬레이터용). 주제별 사진이 없으면 아무 사진 */
+    public Photo randomFor(Topic topic, java.util.Random rnd) {
+        Map<String, List<Photo>> byTopic = byTopicCache;
+        if (byTopic == null) {
+            byTopic = new LinkedHashMap<>();
+            for (List<Photo> list : load().values()) {
+                for (Photo p : list) byTopic.computeIfAbsent(p.topic() == null ? "" : p.topic(), k -> new ArrayList<>()).add(p);
+            }
+            byTopicCache = byTopic;
+        }
+        List<Photo> pool = byTopic.getOrDefault(topic.name(), byTopic.values().stream().flatMap(List::stream).toList());
+        return pool.get(rnd.nextInt(pool.size()));
+    }
+
+    record ManifestEntry(String file, String thumb, int width, int height, String ratio, String topic,
+                         String subject, String label) {
     }
 
     private final MediaProperties props;
@@ -45,7 +67,8 @@ class SeedPhotos {
                 ManifestEntry[] entries = json.readValue(manifest.toFile(), ManifestEntry[].class);
                 for (ManifestEntry e : entries) {
                     byRatio.computeIfAbsent(e.ratio(), k -> new ArrayList<>()).add(new Photo(
-                            "/media/seed/" + e.file(), "/media/seed/" + e.thumb(), e.width(), e.height(), e.ratio()));
+                            "/media/seed/" + e.file(), "/media/seed/" + e.thumb(), e.width(), e.height(), e.ratio(),
+                            e.topic(), e.label()));
                 }
                 if (!byRatio.isEmpty()) {
                     return byRatio;
@@ -67,7 +90,7 @@ class SeedPhotos {
             for (int i = 0; i < counts[r]; i++, n++) {
                 byRatio.computeIfAbsent(names[r], k -> new ArrayList<>()).add(new Photo(
                         "/media/ph/%d.svg?w=%d&h=%d".formatted(n, w, h),
-                        "/media/ph/%d.svg?w=%d&h=%d".formatted(n, 480, h * 480 / w), w, h, names[r]));
+                        "/media/ph/%d.svg?w=%d&h=%d".formatted(n, 480, h * 480 / w), w, h, names[r], null, null));
             }
         }
         return byRatio;

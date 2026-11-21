@@ -24,13 +24,22 @@ import tools.jackson.databind.json.JsonMapper;
  */
 final class SeedReels {
 
-    record Clip(String file, String poster, int width, int height, int durationMs) {
+/**
+     * @param topic 영상에 쓴 사진의 주제 (예전 영상이면 null)
+     * @param label 찍은 대상
+     * @param line  영상 위에 얹은 글자 (캡션 첫 줄로도 쓴다)
+     */
+    record Clip(String file, String poster, int width, int height, int durationMs, String topic, String label,
+                String line) {
     }
 
     private static final List<String> CAPTIONS = List.of(
             "오늘 하루 30초 요약", "이 노래랑 찰떡", "주말 브이로그 🎬", "끝까지 보세요", "따라 해 보세요!",
             "요즘 빠진 것", "출근 전 루틴", "산책하다 찍음 🌿", "여기 꼭 가 보세요", "1분 레시피",
             "운동 기록 💪", "비 오는 날 감성", "작업실 일상", "노을 맛집 발견", "우리 집 고양이 근황");
+    /** 영상 글자 뒤에 붙는 말 */
+    private static final List<String> REEL_TAILS = List.of("🎬", "✨", "🔥", "끝까지 보세요 👀", "저장 필수 📌",
+            "소리 켜고 보세요 🔊", "댓글로 질문 받아요", "", "");
     private static final List<String> TAGS = List.of("릴스", "reels", "브이로그", "일상", "데일리", "추천");
 
     private final JdbcTemplate jdbc;
@@ -52,6 +61,37 @@ final class SeedReels {
         this.now = now;
         this.reelsDir = reelsDir;
         this.json = json;
+    }
+
+    /** 작성자 관심 주제의 영상을 먼저 (없으면 아무거나) */
+    private Clip pick(List<Clip> clips, Topic topic) {
+        List<Clip> same = clips.stream().filter(c -> topic.name().equals(c.topic())).toList();
+        List<Clip> pool = same.isEmpty() ? clips : same;
+        return pool.get(rnd.nextInt(pool.size()));
+    }
+
+    private static Topic parse(String topic) {
+        try {
+            return topic == null ? null : Topic.valueOf(topic);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** 영상 글자 + 덧말 + 해시태그 (주제 태그 1~3개 + 릴스 태그) */
+    private String caption(Clip clip, Topic topic) {
+        String first = clip.line() != null ? clip.line() : CAPTIONS.get(rnd.nextInt(CAPTIONS.size()));
+        String tail = REEL_TAILS.get(rnd.nextInt(REEL_TAILS.size()));
+        StringBuilder sb = new StringBuilder(first);
+        if (!tail.isEmpty()) sb.append(' ').append(tail);
+        List<String> pool = new ArrayList<>(topic != null ? SeedText.TAGS.get(topic) : List.of());
+        java.util.Collections.shuffle(pool, rnd);
+        sb.append("\n\n");
+        for (String t : pool.subList(0, Math.min(pool.size(), 1 + rnd.nextInt(3)))) {
+            sb.append('#').append(t.toLowerCase(java.util.Locale.ROOT)).append(' ');
+        }
+        sb.append('#').append(TAGS.get(rnd.nextInt(TAGS.size())));
+        return sb.toString();
     }
 
     List<Clip> clips() {
@@ -95,14 +135,17 @@ final class SeedReels {
             count = size.scale(count); // large: 사람당 릴스 2.5배
             for (int i = 0; i < count; i++) {
                 long id = nextPostId++;
-                Clip clip = clips.get(rnd.nextInt(clips.size()));
+                Topic topic = u.interests.get(rnd.nextInt(u.interests.size()));
+                Clip clip = pick(clips, topic);
+                Topic clipTopic = parse(clip.topic());
                 Instant at = now.minus(Duration.ofMinutes(30 + rnd.nextInt(90 * 24 * 60)));
                 String code;
                 do {
                     code = Shortcodes.random(rnd);
                 } while (!codes.add(code));
-                String caption = CAPTIONS.get(rnd.nextInt(CAPTIONS.size())) + " #" + TAGS.get(rnd.nextInt(TAGS.size()));
-                posts.add(new Object[] {id, code, u.id, caption, Timestamp.from(at)});
+                String caption = caption(clip, clipTopic);
+                posts.add(new Object[] {id, code, u.id, caption, Timestamp.from(at),
+                        (clipTopic != null ? clipTopic : topic).name()});
                 media.add(new Object[] {id, "/media/reels/" + clip.file(), "/media/reels/" + clip.poster(),
                         clip.width(), clip.height(), clip.durationMs()});
 
@@ -130,16 +173,17 @@ final class SeedReels {
                     Instant ca = at.plus(Duration.ofMinutes(2 + rnd.nextInt(2 * 24 * 60)));
                     if (ca.isBefore(now)) {
                         comments.add(new Object[] {nextCommentId++, id, who,
-                                SeedText.COMMENTS.get(rnd.nextInt(SeedText.COMMENTS.size())), Timestamp.from(ca)});
+                                SeedCaptions.comment(clipTopic, clip.label(), null, rnd), Timestamp.from(ca)});
                     }
                 }
             }
         }
 
         jdbc.batchUpdate("""
-                insert into posts (id, shortcode, author_id, type, caption, created_at, updated_at, recommendable)
-                values (?, ?, ?, 'REEL', ?, ?, ?, true)
+                insert into posts (id, shortcode, author_id, type, caption, created_at, updated_at, recommendable, topic)
+                values (?, ?, ?, 'REEL', ?, ?, ?, true, ?)
                 """, posts, 500, (ps, p) -> {
+            ps.setString(7, (String) p[5]);
             ps.setLong(1, (Long) p[0]);
             ps.setString(2, (String) p[1]);
             ps.setLong(3, (Long) p[2]);
