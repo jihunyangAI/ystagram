@@ -149,6 +149,7 @@ export interface PostPatch {
   location?: string
   hideLikeCount?: boolean
   commentsDisabled?: boolean
+  aiLabel?: boolean
 }
 
 export function useUpdatePost(shortcode: string) {

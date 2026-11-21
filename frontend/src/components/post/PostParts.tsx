@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Heart, MessageCircle, MoreHorizontal, Pin, Repeat2, Send, Trash2, X } from 'lucide-react'
+import { Heart, MessageCircle, MoreHorizontal, Pin, Repeat2, Send, Sparkles, Trash2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useMe } from '../../lib/auth'
 import { nowMs } from '../../lib/clock'
@@ -26,6 +26,7 @@ import { SaveButton } from './SaveButton'
 export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => void }) {
   const toggle = useToggleFollow()
   const navigate = useNavigate()
+  const [aiInfo, setAiInfo] = useState(false)
   const showFollow = post.authorRelationship === 'NONE'
   const hasStory = post.authorStory !== 'NONE'
   return (
@@ -62,10 +63,19 @@ export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => voi
                 {post.collaborators.length > 1 && <span className="text-muted"> 외 {post.collaborators.length - 1}명</span>}
               </span>
             )}
-            <span className="text-muted">·</span>
-            <Link to={`/p/${post.shortcode}`} className="shrink-0 text-muted" title={fullDate(post.createdAt)}>
-              <time dateTime={post.createdAt}>{timeAgo(post.createdAt)}</time>
-            </Link>
+            {!post.ad && (
+              <>
+                <span className="text-muted">·</span>
+                <Link to={`/p/${post.shortcode}`} className="shrink-0 text-muted" title={fullDate(post.createdAt)}>
+                  <time dateTime={post.createdAt}>{timeAgo(post.createdAt)}</time>
+                </Link>
+              </>
+            )}
+            {post.trial && (
+              <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold text-muted">
+                시험 릴스
+              </span>
+            )}
             {showFollow && (
               <>
                 <span className="text-muted">·</span>
@@ -79,17 +89,49 @@ export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => voi
               </>
             )}
           </div>
-          {post.location && (
-            <Link to={`/explore/locations/${post.location.id}`} className="block truncate text-xs hover:underline">
-              {post.location.name}
-            </Link>
+          {(post.ad || post.location || post.aiLabeled) && (
+            <div className="flex min-w-0 items-center gap-1 text-xs">
+              {post.ad && <span>광고</span>}
+              {!post.ad && post.location && (
+                <Link to={`/explore/locations/${post.location.id}`} className="truncate hover:underline">
+                  {post.location.name}
+                </Link>
+              )}
+              {post.aiLabeled && (
+                <>
+                  {(post.ad || post.location) && <span className="text-muted">·</span>}
+                  <button className="shrink-0 text-muted hover:text-text" onClick={() => setAiInfo(true)}>
+                    AI 정보
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
         <button aria-label="옵션 더 보기" className="p-1" onClick={onMenu}>
           <MoreHorizontal size={22} />
         </button>
       </header>
+      <AiInfoModal open={aiInfo} onClose={() => setAiInfo(false)} />
     </>
+  )
+}
+
+/** "AI 정보" 라벨 설명 */
+export function AiInfoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="AI 정보">
+      <div className="space-y-3 p-5 text-sm">
+        <Sparkles size={36} strokeWidth={1.4} className="mx-auto text-primary" />
+        <p className="text-center font-semibold">AI로 만들었거나 수정한 콘텐츠</p>
+        <p className="text-muted">
+          작성자가 이 게시물을 AI 도구로 만들었거나 크게 수정했다고 표시했습니다. 사진·영상이 실제 장면과 다를 수 있습니다.
+        </p>
+        <p className="text-muted">
+          Yangstagram은 연구용 서비스라 AI 감지 기술 없이 작성자 표시와 가짜 데이터 규칙(AI 생성 프로필의 게시물)만으로 라벨을 붙입니다.
+        </p>
+      </div>
+    </Modal>
   )
 }
 
@@ -628,6 +670,7 @@ export function PostMenu({
   onClose,
   onEdit,
   onNotInterested,
+  onHideAd,
 }: {
   post: PostView
   open: boolean
@@ -635,16 +678,40 @@ export function PostMenu({
   onEdit?: () => void
   /** 추천 게시물에서 "관심 없음" */
   onNotInterested?: () => void
+  /** 광고 숨기기 */
+  onHideAd?: () => void
 }) {
   const navigate = useNavigate()
   const remove = useDeletePost()
   const unfollow = useToggleFollow()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [why, setWhy] = useState(false)
+  const [adWhy, setAdWhy] = useState(false)
 
   return (
     <>
       <Modal open={open && !confirmDelete} onClose={onClose} bare title="게시물 옵션">
+        {post.ad && onHideAd && (
+          <SheetButton
+            danger
+            onClick={() => {
+              onClose()
+              onHideAd()
+            }}
+          >
+            광고 숨기기
+          </SheetButton>
+        )}
+        {post.ad && (
+          <SheetButton
+            onClick={() => {
+              onClose()
+              setAdWhy(true)
+            }}
+          >
+            이 광고가 표시되는 이유
+          </SheetButton>
+        )}
         {onNotInterested && (
           <SheetButton
             onClick={() => {
@@ -730,6 +797,23 @@ export function PostMenu({
         <SheetButton onClick={onClose}>취소</SheetButton>
       </Modal>
       {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
+      {post.ad && (
+        <Modal open={adWhy} onClose={() => setAdWhy(false)} title="이 광고가 표시되는 이유">
+          <div className="space-y-3 p-5 text-sm">
+            <div className="flex items-center gap-3">
+              <Avatar user={post.author} size={40} />
+              <p>
+                <span className="font-semibold">{post.author.username}</span>님의 광고
+              </p>
+            </div>
+            <p>{post.ad.reason}</p>
+            <p className="text-muted">
+              연구용 가짜 광고입니다. 실제 광고주·결제는 없고, 비즈니스 계정의 게시물을 광고 자리에 보여 줍니다. Lab → 기능
+              플래그에서 광고 수를 바꾸거나 끌 수 있습니다.
+            </p>
+          </div>
+        </Modal>
+      )}
       <ConfirmModal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

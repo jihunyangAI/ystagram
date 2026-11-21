@@ -60,6 +60,33 @@ export function LabFlagsPage() {
               onChange={(v) => setDraft({ ...draft, feedSuggestedPerPage: v })}
             />
           </Flag>
+          <Flag title="홈 피드 광고" hint="한 쪽(약 10개)에 끼우는 가짜 광고 수. 광고 성과는 Lab → 광고 탭에서 봅니다.">
+            <Choice
+              value={draft.adsPerPage}
+              options={[0, 1, 2, 3].map((n) => [n, n === 0 ? '끄기' : `${n}개`] as [number, string])}
+              onChange={(v) => setDraft({ ...draft, adsPerPage: v })}
+            />
+          </Flag>
+          <Flag title="DM 자동 응답 봇" hint="가짜 사용자에게 메시지를 보내면 몇 초 뒤 읽고, 입력 중 표시 후 미리 만든 문장으로 답합니다.">
+            <Choice
+              value={draft.autoReply}
+              options={[
+                [true, '켜기'],
+                [false, '끄기'],
+              ]}
+              onChange={(v) => setDraft({ ...draft, autoReply: v })}
+            />
+          </Flag>
+          <Flag title="AI 생성 프로필 추천" hint="기본 규칙: AI로 만든 가상 인물의 게시물은 팔로우하지 않으면 홈 추천·탐색·릴스에 나오지 않습니다.">
+            <Choice
+              value={draft.recommendAiProfiles}
+              options={[
+                [false, '추천에서 빼기'],
+                [true, '추천에 넣기'],
+              ]}
+              onChange={(v) => setDraft({ ...draft, recommendAiProfiles: v })}
+            />
+          </Flag>
           <div className="flex gap-2">
             <button onClick={() => save.mutate(draft)} disabled={save.isPending} className="btn btn-primary">
               저장

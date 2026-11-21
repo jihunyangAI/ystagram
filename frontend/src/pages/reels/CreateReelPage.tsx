@@ -31,6 +31,8 @@ export function CreateReelPage() {
   const [caption, setCaption] = useState('')
   const [hideLikes, setHideLikes] = useState(false)
   const [noComments, setNoComments] = useState(false)
+  const [aiLabel, setAiLabel] = useState(false)
+  const [trial, setTrial] = useState(false)
   const [sharing, setSharing] = useState(false)
   const video = useRef<HTMLVideoElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -79,7 +81,14 @@ export function CreateReelPage() {
       const form = new FormData()
       form.append('video', file, file.name)
       form.append('poster', await capturePoster(), 'cover.jpg')
-      const data = { caption, durationMs: Math.round(duration), hideLikeCount: hideLikes, commentsDisabled: noComments }
+      const data = {
+        caption,
+        durationMs: Math.round(duration),
+        hideLikeCount: hideLikes,
+        commentsDisabled: noComments,
+        aiLabel,
+        trial,
+      }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
       const reel = await api.upload<PostView>('POST', '/api/reels', form)
       qc.invalidateQueries({ queryKey: ['grid'] })
@@ -164,6 +173,18 @@ export function CreateReelPage() {
             <CaptionField value={caption} onChange={setCaption} />
             <Toggle checked={hideLikes} onChange={setHideLikes} label="좋아요 수 숨기기" />
             <Toggle checked={noComments} onChange={setNoComments} label="댓글 기능 해제" />
+            <Toggle
+              checked={aiLabel}
+              onChange={setAiLabel}
+              label="AI 정보 라벨 추가"
+              help="AI로 만들었거나 크게 수정한 영상이면 켜 주세요."
+            />
+            <Toggle
+              checked={trial}
+              onChange={setTrial}
+              label="시험 릴스"
+              help="먼저 팔로워가 아닌 사람에게만 보여 줍니다. 24시간 뒤 인사이트에서 반응을 보고 팔로워에게 공유할지 정하세요."
+            />
             <button className="self-start text-sm text-muted underline" onClick={() => input.current?.click()}>
               다른 영상 선택
             </button>

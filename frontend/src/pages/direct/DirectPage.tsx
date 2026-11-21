@@ -11,6 +11,7 @@ import { openConversation, useDmUnread, useInbox } from '../../lib/dm'
 import { timeAgo } from '../../lib/format'
 import type { DmFolder, InboxItem, UserSummary } from '../../lib/types'
 import { ThreadPane } from './ThreadPane'
+import { NotesTray } from '../../components/dm/NotesTray'
 
 const FOLDERS: { key: DmFolder; label: string }[] = [
   { key: 'PRIMARY', label: '기본' },
@@ -52,6 +53,7 @@ export function DirectPage() {
             <MessageCirclePlus size={26} />
           </button>
         </header>
+        <NotesTray me={me.user} />
         <FolderTabs folder={folder} onChange={setFolder} />
         <InboxList folder={folder} activeId={conversationId} meId={me.user.id} />
       </section>
@@ -134,6 +136,8 @@ function preview(c: InboxItem, meId: number): string {
       return `${who}게시물을 보냈습니다`
     case 'STORY_REPLY':
       return `${who}스토리에 답장: ${l.text ?? ''}`
+    case 'NOTE_REPLY':
+      return `${who}노트에 답장: ${l.text ?? ''}`
     default:
       return `${who}${l.text ?? ''}`
   }

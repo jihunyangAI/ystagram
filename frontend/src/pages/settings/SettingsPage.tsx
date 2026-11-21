@@ -5,6 +5,7 @@ import {
   Ban,
   BarChart3,
   Bookmark,
+  CalendarClock,
   ChevronRight,
   CircleUserRound,
   EyeOff,
@@ -13,6 +14,7 @@ import {
   LogOut,
   MessageSquareOff,
   Moon,
+  ShieldCheck,
   Sparkles,
   Star,
   UserRoundCheck,
@@ -22,6 +24,31 @@ import clsx from 'clsx'
 import { useLogout, useMe } from '../../lib/auth'
 import { getTheme, setTheme } from '../../lib/theme'
 import type { Theme } from '../../lib/theme'
+
+/** 10대 계정 기본 보호 (만 18세 미만) */
+function TeenProtection() {
+  const rules = [
+    ['비공개 계정으로 시작', '승인한 사람만 게시물을 볼 수 있습니다.'],
+    ['메시지 제한', '회원님이 팔로우하는 사람만 메시지를 보낼 수 있습니다.'],
+    ['태그·멘션 제한', '회원님이 팔로우하는 사람만 회원님을 태그하거나 멘션할 수 있습니다.'],
+    ['광고 타기팅 제한', '관심사에 맞춘 광고 대신 누구에게나 보이는 광고만 보입니다.'],
+  ]
+  return (
+    <section className="mx-4 my-2 rounded-xl border border-border p-4">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <ShieldCheck size={18} className="text-primary" /> 10대 계정 보호가 적용되어 있어요
+      </h2>
+      <ul className="mt-3 space-y-2 text-sm">
+        {rules.map(([title, desc]) => (
+          <li key={title}>
+            <span className="font-semibold">{title}</span>
+            <span className="block text-xs text-muted">{desc}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 interface Item {
   to: string
@@ -52,6 +79,7 @@ export function SettingsPage() {
         { to: `/${me.user.username}/saved/all`, label: '저장됨', icon: Bookmark },
         { to: '/archive/stories', label: '보관함', icon: Archive, hint: '지난 스토리' },
         { to: '/insights', label: '인사이트', icon: BarChart3, hint: '도달·노출·참여·팔로워 변화' },
+        { to: '/accounts/scheduled', label: '예약된 콘텐츠', icon: CalendarClock, hint: '예약한 게시물 보기·지금 게시·취소' },
       ],
     },
     {
@@ -85,6 +113,7 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-[600px] pb-10">
       <h1 className="px-4 pt-6 pb-2 text-xl font-bold md:pt-8">설정 및 활동</h1>
+      {me.teen && <TeenProtection />}
       {sections.map((s) => (
         <section key={s.title} className="border-b border-border py-2">
           <h2 className="px-4 pt-2 pb-1 text-sm text-muted">{s.title}</h2>

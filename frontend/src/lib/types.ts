@@ -17,6 +17,8 @@ export interface Me {
   email: string | null
   accountType: AccountType
   fake: boolean
+  /** 10대 계정 (만 18세 미만, 기본 보호 규칙 적용) */
+  teen: boolean
 }
 
 /** 보는 사람 → 상대 관계 */
@@ -147,8 +149,35 @@ export interface PostView {
   collaborators: UserSummary[]
   /** 내가 공동 작업 초대를 받았고 아직 답하지 않음 */
   collabInvite: boolean
+  /** "AI 정보" 라벨 */
+  aiLabeled: boolean
+  /** 시험 릴스 (작성자에게만 true: 팔로워에게는 보이지 않음) */
+  trial: boolean
+  /** 광고로 들어온 경우 */
+  ad: AdInfo | null
   /** 추천 영역(홈·탐색·릴스)에서 이 자리에 온 이유. 최신순 목록에서는 null */
   ranking: Ranking | null
+}
+
+export interface AdInfo {
+  id: number
+  headline: string
+  cta: string
+  /** "이 광고가 표시되는 이유" */
+  reason: string
+}
+
+/** 예약한 게시물 */
+export interface ScheduledPost {
+  id: number
+  thumbUrl: string
+  captionStart: string | null
+  mediaCount: number
+  scheduledAt: string
+  createdAt: string
+  status: 'PENDING' | 'PUBLISHED' | 'FAILED'
+  shortcode: string | null
+  failure: string | null
 }
 
 export interface GridItem {
@@ -369,7 +398,7 @@ export interface SavedOverview {
 
 export type DmFolder = 'PRIMARY' | 'GENERAL' | 'REQUEST'
 
-export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY'
+export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY'
 
 export interface InboxItem {
   id: number
@@ -428,6 +457,32 @@ export interface MessageView {
   unsent: boolean
   reactions: { userId: number; emoji: string }[]
   canEdit: boolean
+  /** 노트 답장이면 원래 노트 문구 */
+  quote: string | null
+}
+
+export interface ScheduledMessage {
+  id: number
+  conversationId: number
+  body: string
+  scheduledAt: string
+  createdAt: string
+}
+
+// ------------------------------------------------------------ 노트
+
+export interface Note {
+  user: UserSummary
+  body: string
+  audience: 'MUTUAL' | 'CLOSE_FRIENDS'
+  createdAt: string
+  expiresAt: string
+  mine: boolean
+}
+
+export interface Notes {
+  mine: Note | null
+  others: Note[]
 }
 
 export interface MessagePage {

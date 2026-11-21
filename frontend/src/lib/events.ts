@@ -4,8 +4,9 @@
 import { useEffect, useRef } from 'react'
 import { api } from './api'
 
-export type EventType = 'IMPRESSION' | 'VIEW_TIME' | 'PROFILE_VISIT' | 'SKIP' | 'NOT_INTERESTED'
-export type Surface = 'HOME' | 'EXPLORE' | 'REELS' | 'PROFILE' | 'POST' | 'SEARCH'
+export type EventType = 'IMPRESSION' | 'VIEW_TIME' | 'PROFILE_VISIT' | 'SKIP' | 'NOT_INTERESTED' | 'AD_CLICK' | 'AD_HIDE'
+/** AD: 광고 자리에서 보인 노출·클릭 */
+export type Surface = 'HOME' | 'EXPLORE' | 'REELS' | 'PROFILE' | 'POST' | 'SEARCH' | 'AD'
 
 interface ClientEvent {
   type: EventType

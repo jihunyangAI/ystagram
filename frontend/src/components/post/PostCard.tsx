@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, ChevronRight } from 'lucide-react'
 import { track, useImpression } from '../../lib/events'
 import { useToggleLike } from '../../lib/posts'
 import type { PostView } from '../../lib/types'
@@ -16,10 +16,18 @@ export function PostCard({ post }: { post: PostView }) {
   const [menu, setMenu] = useState(false)
   const [editing, setEditing] = useState(false)
   const [index, setIndex] = useState(0)
-  const [hidden, setHidden] = useState(false)
-  const ref = useImpression<HTMLElement>(post.shortcode, 'HOME')
+  const [hidden, setHidden] = useState<false | 'post' | 'ad'>(false)
+  const ref = useImpression<HTMLElement>(post.shortcode, post.ad ? 'AD' : 'HOME')
   const suggested = post.ranking?.source === 'SUGGESTED'
 
+  if (hidden === 'ad') {
+    return (
+      <div className="border-b border-border px-4 py-6 text-center text-sm">
+        <p className="font-semibold">광고를 숨겼습니다</p>
+        <p className="mt-1 text-muted">이 광고는 다시 보이지 않습니다.</p>
+      </div>
+    )
+  }
   if (hidden) {
     return (
       <div className="border-b border-border px-4 py-6 text-center text-sm">
@@ -50,6 +58,21 @@ export function PostCard({ post }: { post: PostView }) {
         />
         <ScoreBadge ranking={post.ranking} className="absolute top-2 left-2" />
       </div>
+      {post.ad && (
+        <button
+          className="flex w-full items-center justify-between border-b border-border px-3 py-3 text-left text-sm font-semibold text-primary hover:bg-surface-2 md:rounded-b-md"
+          onClick={() => {
+            track({ type: 'AD_CLICK', shortcode: post.shortcode, surface: 'AD' })
+            navigate(`/${post.author.username}`)
+          }}
+        >
+          <span className="min-w-0 truncate">
+            {post.ad.cta}
+            <span className="ml-2 font-normal text-muted">{post.ad.headline}</span>
+          </span>
+          <ChevronRight size={18} className="shrink-0" />
+        </button>
+      )}
       <PostActions
         post={post}
         onComment={() => navigate(`/p/${post.shortcode}`)}
@@ -81,10 +104,14 @@ export function PostCard({ post }: { post: PostView }) {
           suggested
             ? () => {
                 track({ type: 'NOT_INTERESTED', shortcode: post.shortcode, surface: 'HOME' })
-                setHidden(true)
+                setHidden('post')
               }
             : undefined
         }
+        onHideAd={() => {
+          track({ type: 'AD_HIDE', shortcode: post.shortcode, surface: 'AD' })
+          setHidden('ad')
+        }}
       />
       {editing && <EditPostModal post={post} onClose={() => setEditing(false)} />}
       </article>

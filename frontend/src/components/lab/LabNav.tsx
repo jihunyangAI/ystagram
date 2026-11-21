@@ -8,6 +8,7 @@ const TABS = [
   ['/lab/simulator', '활동 시뮬레이터'],
   ['/lab/events', '이벤트 로그'],
   ['/lab/flags', '기능 플래그'],
+  ['/lab/ads', '광고'],
 ] as const
 
 /** Lab 화면 공통 머리: 제목 + 도구 탭 */

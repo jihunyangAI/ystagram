@@ -8,7 +8,8 @@ import { CaptionField, MAX_CAPTION, Toggle, countHashtags, useHashtagLimit } fro
 import { toast } from '../../components/Toast'
 import { api } from '../../lib/api'
 import { useMe } from '../../lib/auth'
-import type { LocationItem, PostView, UserSummary } from '../../lib/types'
+import type { LocationItem, PostView, ScheduledPost, UserSummary } from '../../lib/types'
+import { fromLocalInput, laterInput, scheduleLabel } from '../../lib/datetime'
 import { EditStep } from './EditStep'
 import { NO_ADJUST, cssFilter, drawVignette, vignetteStyle } from './filters'
 import type { Adjust } from './filters'
@@ -102,6 +103,9 @@ export function CreatePostPage() {
   const [location, setLocation] = useState('')
   const [hideLikeCount, setHide] = useState(false)
   const [commentsDisabled, setNoComments] = useState(false)
+  const [aiLabel, setAiLabel] = useState(false)
+  const [scheduleOn, setScheduleOn] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState(() => laterInput(60))
   const [sharing, setSharing] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [tags, setTags] = useState<DraftTag[]>([])
@@ -171,8 +175,17 @@ export function CreatePostPage() {
         tags: tags.map((t) => ({ username: t.user.username, mediaIndex: t.mediaIndex, x: t.x, y: t.y })),
         collaborators: collaborators.map((u) => u.username),
         filter: items[0]?.filter === 'normal' ? null : items[0]?.filter,
+        aiLabel,
+        scheduledAt: scheduleOn ? new Date(fromLocalInput(scheduleAt)).toISOString() : null,
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+      if (scheduleOn) {
+        const s = await api.upload<ScheduledPost>('POST', '/api/posts/scheduled', form)
+        qc.invalidateQueries({ queryKey: ['scheduled'] })
+        toast(`${scheduleLabel(s.scheduledAt)}에 게시되도록 예약했습니다`)
+        navigate('/accounts/scheduled')
+        return
+      }
       const post = await api.upload<PostView>('POST', '/api/posts', form)
       qc.invalidateQueries({ queryKey: ['feed'] })
       qc.invalidateQueries({ queryKey: ['grid'] })
@@ -207,7 +220,7 @@ export function CreatePostPage() {
         disabled={sharing || tooManyTags || tooLong}
         onClick={share}
       >
-        {sharing ? '공유 중…' : '공유하기'}
+        {sharing ? (scheduleOn ? '예약 중…' : '공유 중…') : scheduleOn ? '예약하기' : '공유하기'}
       </button>
     ) : (
       <span className="w-10" />
@@ -360,8 +373,32 @@ export function CreatePostPage() {
                     help="회원님만 이 게시물의 좋아요 수를 볼 수 있습니다."
                   />
                   <Toggle checked={commentsDisabled} onChange={setNoComments} label="댓글 기능 해제" help="나중에 게시물 메뉴에서 바꿀 수 있습니다." />
+                  <Toggle
+                    checked={aiLabel}
+                    onChange={setAiLabel}
+                    label="AI 정보 라벨 추가"
+                    help="AI로 만들었거나 크게 수정한 사진이면 켜 주세요. 게시물에 'AI 정보'가 표시됩니다."
+                  />
                 </div>
               </details>
+              <div className="border-t border-border pt-4">
+                <Toggle
+                  checked={scheduleOn}
+                  onChange={setScheduleOn}
+                  label="이 게시물 예약"
+                  help="정한 시각에 자동으로 게시됩니다 (10분 뒤 ~ 75일 안). Lab 시간 가속으로 바로 확인할 수 있어요."
+                />
+                {scheduleOn && (
+                  <input
+                    type="datetime-local"
+                    className="input mt-3"
+                    value={scheduleAt}
+                    min={laterInput(10)}
+                    onChange={(e) => setScheduleAt(e.target.value)}
+                    aria-label="게시할 날짜와 시각"
+                  />
+                )}
+              </div>
             </div>
           </div>
         )}

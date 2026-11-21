@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, CornerUpLeft, ImageIcon, Pencil, Smile, Undo2, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CalendarClock, ChevronDown, ChevronLeft, CornerUpLeft, ImageIcon, Pencil, Smile, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
-import { ConfirmModal } from '../../components/Modal'
+import { ConfirmModal, Modal } from '../../components/Modal'
 import { toast } from '../../components/Toast'
 import { api } from '../../lib/api'
 import { readConversation, useConversation, useMessageActions, useMessages, useSendImage, useSendMessage } from '../../lib/dm'
 import { timeAgo } from '../../lib/format'
 import { sendTyping, useRealtimeEvent } from '../../lib/realtime'
-import type { ConversationView, MessageView, UserSummary } from '../../lib/types'
+import type { ConversationView, MessageView, ScheduledMessage, UserSummary } from '../../lib/types'
+import { fromLocalInput, laterInput, scheduleLabel } from '../../lib/datetime'
 import { conversationName } from './DirectPage'
 
 const REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍']
@@ -268,6 +269,14 @@ function Bubble({
           ↩ {m.replyTo.senderUsername}: {m.replyTo.text ?? '메시지를 보내지 않았습니다'}
         </span>
       )}
+      {m.kind === 'NOTE_REPLY' && (
+        <>
+          <span className="text-xs text-muted">{mine ? '노트에 답장함' : '회원님의 노트에 답장함'}</span>
+          {m.quote && (
+            <span className="max-w-[240px] rounded-2xl border border-border px-3 py-1.5 text-xs text-muted">“{m.quote}”</span>
+          )}
+        </>
+      )}
       {m.kind === 'STORY_REPLY' && m.story && (
         <span className="text-xs text-muted">{mine ? `${m.story.author.username}님의 스토리에 답장함` : '회원님의 스토리에 답장함'}</span>
       )}
@@ -423,6 +432,7 @@ function Composer({
   onDone: () => void
 }) {
   const [body, setBody] = useState('')
+  const [scheduling, setScheduling] = useState(false)
   const send = useSendMessage(id)
   const image = useSendImage(id)
   const actions = useMessageActions()
@@ -462,6 +472,7 @@ function Composer({
 
   return (
     <div className="px-3 pt-1 pb-3 md:px-5">
+      <ScheduledList id={id} />
       {(replyTo || editing) && (
         <div className="mb-1 flex items-center gap-2 rounded-t-xl bg-surface-2 px-3 py-1.5 text-xs">
           <span className="min-w-0 flex-1 truncate">
@@ -499,9 +510,16 @@ function Composer({
           className="max-h-32 min-h-[28px] min-w-0 flex-1 resize-none bg-transparent py-1 text-sm outline-none placeholder:text-muted"
         />
         {body.trim() ? (
-          <button type="submit" disabled={send.isPending} className="py-1 text-sm font-semibold text-primary hover:text-text">
-            {editing ? '수정' : '보내기'}
-          </button>
+          <>
+            {!editing && !replyTo && (
+              <button type="button" aria-label="메시지 예약" title="메시지 예약" className="p-1 text-muted hover:text-text" onClick={() => setScheduling(true)}>
+                <CalendarClock size={20} />
+              </button>
+            )}
+            <button type="submit" disabled={send.isPending} className="py-1 text-sm font-semibold text-primary hover:text-text">
+              {editing ? '수정' : '보내기'}
+            </button>
+          </>
         ) : (
           <>
             <input
@@ -521,6 +539,108 @@ function Composer({
           </>
         )}
       </form>
+      {scheduling && (
+        <ScheduleModal
+          id={id}
+          body={body.trim()}
+          onClose={() => setScheduling(false)}
+          onDone={() => {
+            setBody('')
+            setScheduling(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------ 예약 메시지 (보낸 사람에게만 보임)
+
+function ScheduleModal({ id, body, onClose, onDone }: { id: number; body: string; onClose: () => void; onDone: () => void }) {
+  const qc = useQueryClient()
+  const [at, setAt] = useState(() => laterInput(60))
+  const save = useMutation({
+    mutationFn: () =>
+      api.post<ScheduledMessage>(`/api/direct/conversations/${id}/scheduled`, {
+        body,
+        scheduledAt: new Date(fromLocalInput(at)).toISOString(),
+      }),
+    onSuccess: (m) => {
+      qc.invalidateQueries({ queryKey: ['scheduled-messages', id] })
+      toast(`${scheduleLabel(m.scheduledAt)}에 보내도록 예약했습니다`)
+      onDone()
+    },
+    onError: (e) => toast((e as Error).message),
+  })
+  return (
+    <Modal open onClose={onClose} title="메시지 예약">
+      <div className="space-y-3 p-4">
+        <p className="line-clamp-3 rounded-2xl bg-surface-2 px-3 py-2 text-sm">{body}</p>
+        <input
+          type="datetime-local"
+          className="input"
+          value={at}
+          min={laterInput(1)}
+          onChange={(e) => setAt(e.target.value)}
+          aria-label="보낼 날짜와 시각"
+        />
+        <p className="text-xs text-muted">최대 29일 뒤까지 예약할 수 있습니다. 예약한 메시지는 회원님에게만 보입니다.</p>
+        <button className="btn btn-primary w-full" disabled={!at || save.isPending} onClick={() => save.mutate()}>
+          예약
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+function ScheduledList({ id }: { id: number }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const { data } = useQuery({
+    queryKey: ['scheduled-messages', id],
+    queryFn: () => api.get<ScheduledMessage[]>(`/api/direct/conversations/${id}/scheduled`),
+    refetchInterval: 15_000,
+  })
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['scheduled-messages', id] })
+    qc.invalidateQueries({ queryKey: ['messages', id] })
+  }
+  const cancel = useMutation({
+    mutationFn: (sid: number) => api.delete(`/api/direct/scheduled/${sid}`),
+    onSuccess: refresh,
+    onError: (e) => toast((e as Error).message),
+  })
+  const sendNow = useMutation({
+    mutationFn: (sid: number) => api.post(`/api/direct/scheduled/${sid}/send`),
+    onSuccess: refresh,
+    onError: (e) => toast((e as Error).message),
+  })
+  if (!data || data.length === 0) return null
+  return (
+    <div className="mb-2 rounded-xl border border-border text-sm">
+      <button className="flex w-full items-center gap-2 px-3 py-2" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <CalendarClock size={16} className="text-primary" />
+        <span className="flex-1 text-left font-semibold">예약된 메시지 {data.length}개</span>
+        <ChevronDown size={16} className={clsx('transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <ul className="max-h-48 overflow-y-auto border-t border-border">
+          {data.map((m) => (
+            <li key={m.id} className="flex items-center gap-2 px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{m.body}</span>
+                <span className="text-xs text-muted">{scheduleLabel(m.scheduledAt)}</span>
+              </span>
+              <button className="text-xs font-semibold text-primary" onClick={() => sendNow.mutate(m.id)}>
+                지금 보내기
+              </button>
+              <button className="text-xs text-danger" onClick={() => cancel.mutate(m.id)}>
+                삭제
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

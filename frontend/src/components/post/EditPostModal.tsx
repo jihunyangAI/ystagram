@@ -13,12 +13,13 @@ export function EditPostModal({ post, onClose }: { post: PostView; onClose: () =
   const [location, setLocation] = useState(post.location?.name ?? '')
   const [hideLikeCount, setHide] = useState(post.hideLikeCount)
   const [commentsDisabled, setNoComments] = useState(post.commentsDisabled)
+  const [aiLabel, setAiLabel] = useState(post.aiLabeled)
   const hashtagLimit = useHashtagLimit()
   const invalid = caption.length > MAX_CAPTION || countHashtags(caption) > hashtagLimit
 
   const save = () =>
     update.mutate(
-      { caption, location, hideLikeCount, commentsDisabled },
+      { caption, location, hideLikeCount, commentsDisabled, aiLabel },
       {
         onSuccess: () => {
           toast('게시물을 수정했습니다')
@@ -42,6 +43,7 @@ export function EditPostModal({ post, onClose }: { post: PostView; onClose: () =
         <div className="mt-4 space-y-3">
           <Toggle checked={hideLikeCount} onChange={setHide} label="이 게시물의 좋아요 수 숨기기" />
           <Toggle checked={commentsDisabled} onChange={setNoComments} label="댓글 기능 해제" />
+          <Toggle checked={aiLabel} onChange={setAiLabel} label="AI 정보 라벨" />
         </div>
       </div>
       <div className="flex justify-end gap-2 border-t border-border p-3">

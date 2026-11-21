@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowDownRight, ArrowUpRight, ChevronLeft, Clapperboard } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowDownRight, ArrowUpRight, ChevronLeft, Clapperboard, FlaskConical } from 'lucide-react'
+import { toast } from '../../components/Toast'
 import clsx from 'clsx'
 import { api } from '../../lib/api'
 import { formatCount } from '../../lib/format'
-import type { GridItem } from '../../lib/types'
+import type { GridItem, PostView } from '../../lib/types'
 
 interface Totals {
   reach: number
@@ -56,6 +57,16 @@ interface PostInsights {
   durationMs: number | null
   surfaces: Share[]
   daily: Day[]
+  /** 시험 릴스였던 게시물만 */
+  trial: TrialInfo | null
+}
+
+interface TrialInfo {
+  active: boolean
+  resultsAt: string
+  ready: boolean
+  sharedAt: string | null
+  nonFollowerReach: number
 }
 
 type Metric = 'reach' | 'impressions' | 'interactions' | 'newFollowers'
@@ -195,7 +206,8 @@ export function PostInsightsPage() {
       <PageHeader title="게시물 인사이트" />
       {isLoading && <p className="p-10 text-center text-sm text-muted">불러오는 중…</p>}
       {isError && <p className="p-10 text-center text-sm text-danger">{error.message}</p>}
-      {data && (
+      {data?.trial && <TrialCard shortcode={shortcode} trial={data.trial} />}
+      {data && !(data.trial?.active && !data.trial.ready) && (
         <>
           <section className="grid grid-cols-2 gap-2 px-4 pt-4 sm:grid-cols-4">
             <Tile label="도달한 계정" value={data.reach} />
@@ -231,6 +243,51 @@ export function PostInsightsPage() {
 }
 
 // ------------------------------------------------------------ 조각
+
+/** 시험 릴스: 24시간 뒤 성과 공개, 팔로워에게 공유 */
+function TrialCard({ shortcode, trial }: { shortcode: string; trial: TrialInfo }) {
+  const qc = useQueryClient()
+  const share = useMutation({
+    mutationFn: () => api.post<PostView>(`/api/posts/${shortcode}/trial/share`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['post-insights', shortcode] })
+      void qc.invalidateQueries({ queryKey: ['post', shortcode] })
+      void qc.invalidateQueries({ queryKey: ['grid'] })
+      toast('팔로워에게도 공유했습니다')
+    },
+    onError: (e) => toast((e as Error).message),
+  })
+  const when = new Date(trial.resultsAt).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return (
+    <section className="mx-4 mt-4 rounded-xl border border-border p-4">
+      <h2 className="flex items-center gap-2 font-semibold">
+        <FlaskConical size={18} className="text-primary" /> 시험 릴스
+      </h2>
+      {!trial.active ? (
+        <p className="mt-1 text-sm text-muted">
+          {trial.sharedAt && new Date(trial.sharedAt).toLocaleString('ko-KR')}에 팔로워에게 공유했습니다. 이제 팔로워 피드와 프로필에도
+          보입니다.
+        </p>
+      ) : trial.ready ? (
+        <>
+          <p className="mt-1 text-sm">
+            팔로워가 아닌 <b>{trial.nonFollowerReach.toLocaleString('ko-KR')}명</b>에게 도달했습니다. 반응이 좋으면 팔로워에게도 공유해 보세요.
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-muted">
+          지금은 팔로워가 아닌 사람에게만 보여 주는 중입니다. 결과는 <b className="text-text">{when}</b>부터 볼 수 있어요 (Lab 시간 가속으로
+          앞당길 수 있습니다).
+        </p>
+      )}
+      {trial.active && (
+        <button className="btn btn-primary mt-3" disabled={share.isPending} onClick={() => share.mutate()}>
+          팔로워에게 공유
+        </button>
+      )}
+    </section>
+  )
+}
 
 function PageHeader({ title }: { title: string }) {
   const navigate = useNavigate()
