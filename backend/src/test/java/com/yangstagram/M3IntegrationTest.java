@@ -206,7 +206,15 @@ class M3IntegrationTest {
                 .andExpect(jsonPath("$.favorite").value(true));
         String fav = body(mvc.perform(get("/api/feed").param("mode", "favorites").session(s)));
         List<String> authors = JsonPath.read(fav, "$.items[*].author.username");
-        assertThat(authors).isNotEmpty().containsOnly(target);
+        assertThat(authors).isNotEmpty().contains(target);
+        // 즐겨찾기한 사람의 글 또는 그 사람이 공동 작업자로 참여한 글만
+        List<Map<String, Object>> items = JsonPath.read(fav, "$.items[*]");
+        for (Map<String, Object> item : items) {
+            String author = (String) ((Map<?, ?>) item.get("author")).get("username");
+            List<String> collabs = ((List<?>) item.get("collaborators")).stream()
+                    .map(c -> (String) ((Map<?, ?>) c).get("username")).toList();
+            assertThat(author.equals(target) || collabs.contains(target)).as(author).isTrue();
+        }
 
         mvc.perform(put("/api/users/" + target + "/mute").session(s).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"posts\":true,\"stories\":true}")).andExpect(jsonPath("$.mutedPosts").value(true));

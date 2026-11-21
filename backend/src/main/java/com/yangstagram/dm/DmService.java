@@ -382,6 +382,11 @@ public class DmService {
         for (String username : usernames.stream().limit(MAX_GROUP).toList()) {
             ConversationView c = open(me, List.of(username), null);
             insert(c.id(), me, "POST", null, null, postId, null, null);
+            jdbc.update("""
+                    insert into events (user_id, type, post_id, surface, created_at)
+                    values (:me, 'SHARE', :post, 'POST', :now)
+                    """, new MapSqlParameterSource("me", me).addValue("post", postId)
+                    .addValue("now", Timestamp.from(Instant.now(clock))));
             if (body != null) insert(c.id(), me, "TEXT", body, null, null, null, null);
             conversations.add(c.id());
         }

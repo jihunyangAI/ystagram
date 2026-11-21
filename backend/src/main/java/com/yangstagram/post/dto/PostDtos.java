@@ -1,5 +1,6 @@
 package com.yangstagram.post.dto;
 
+import com.yangstagram.algo.AlgorithmSettings.Ranking;
 import com.yangstagram.follow.Relationship;
 import com.yangstagram.story.StoryRings.Ring;
 import com.yangstagram.user.dto.UserSummary;
@@ -60,7 +61,16 @@ public final class PostDtos {
                            boolean hideLikeCount, boolean commentsDisabled, Instant createdAt, boolean mine,
                            List<CommentView> previewComments, boolean savedByMe, boolean repostedByMe,
                            int repostCount, Repost repost, Ring authorStory, String type, int viewCount,
-                           List<TagView> tags, List<UserSummary> collaborators, boolean collabInvite) {
+                           List<TagView> tags, List<UserSummary> collaborators, boolean collabInvite,
+                           Ranking ranking) {
+
+        /** 추천 영역에서 줄 세운 이유를 붙인 복사본 */
+        public PostView withRanking(Ranking r) {
+            return new PostView(id, shortcode, author, authorRelationship, caption, location, media, likeCount,
+                    commentCount, likedByMe, likedBy, hideLikeCount, commentsDisabled, createdAt, mine,
+                    previewComments, savedByMe, repostedByMe, repostCount, repost, authorStory, type, viewCount, tags,
+                    collaborators, collabInvite, r);
+        }
     }
 
     /** 피드에서 "OOO님이 리포스트함"으로 보일 때 */
@@ -74,7 +84,11 @@ public final class PostDtos {
      * @param viewCount 릴스 조회수 (릴스 탭에 표시)
      */
     public record GridItem(String shortcode, String thumbUrl, int mediaCount, Integer likeCount, int commentCount,
-                           String type, int viewCount) {
+                           String type, int viewCount, Ranking ranking) {
+
+        public GridItem withRanking(Ranking r) {
+            return new GridItem(shortcode, thumbUrl, mediaCount, likeCount, commentCount, type, viewCount, r);
+        }
     }
 
     /**

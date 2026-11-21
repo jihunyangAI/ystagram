@@ -47,6 +47,7 @@ final class SeedPosts {
         String shortcode;
         String type;
         String caption;
+        Topic topic;
         Long locationId;
         boolean hideLikeCount;
         boolean commentsDisabled;
@@ -137,6 +138,7 @@ final class SeedPosts {
                 Topic topic = u.interests.get(rnd.nextInt(u.interests.size()));
                 p.tags = pickTags(topic, u);
                 p.caption = caption(topic, u, p.tags);
+                p.topic = topic;
                 p.locationId = rnd.nextDouble() < (u.persona == Persona.BUSINESS ? 0.6 : 0.35)
                         ? 1L + rnd.nextInt(SeedText.LOCATIONS.size()) : null;
                 p.hideLikeCount = rnd.nextDouble() < (u.persona == Persona.INFLUENCER ? 0.10 : 0.03);
@@ -308,8 +310,8 @@ final class SeedPosts {
     private void insertPosts(List<FakePost> posts) {
         jdbc.batchUpdate("""
                 insert into posts (id, shortcode, author_id, type, caption, location_id, hide_like_count,
-                                   comments_disabled, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   comments_disabled, created_at, updated_at, topic)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, posts, 500, (ps, p) -> {
             ps.setLong(1, p.id);
             ps.setString(2, p.shortcode);
@@ -321,6 +323,7 @@ final class SeedPosts {
             ps.setBoolean(8, p.commentsDisabled);
             ps.setTimestamp(9, Timestamp.from(p.createdAt));
             ps.setTimestamp(10, Timestamp.from(p.createdAt));
+            ps.setString(11, p.topic.name());
         });
         jdbc.execute("select setval(pg_get_serial_sequence('posts', 'id'), greatest(1, (select max(id) from posts)))");
 

@@ -2,6 +2,8 @@ package com.yangstagram.post;
 
 import com.yangstagram.common.error.ApiException;
 import com.yangstagram.common.time.LabClock;
+import com.yangstagram.event.EventService;
+import com.yangstagram.lab.FeatureFlags;
 import com.yangstagram.follow.FollowService;
 import com.yangstagram.media.MediaStorage;
 import com.yangstagram.media.StoredImage;
@@ -45,9 +47,12 @@ public class PostService {
     private final LabClock clock;
     private final NotificationService notifications;
     private final Mentions mentions;
+    private final EventService events;
+    private final FeatureFlags flags;
 
     public PostService(NamedParameterJdbcTemplate jdbc, PostQueries queries, FollowService followService,
-                       MediaStorage storage, LabClock clock, NotificationService notifications, Mentions mentions) {
+                       MediaStorage storage, LabClock clock, NotificationService notifications, Mentions mentions,
+                       EventService events, FeatureFlags flags) {
         this.jdbc = jdbc;
         this.queries = queries;
         this.followService = followService;
@@ -55,6 +60,8 @@ public class PostService {
         this.clock = clock;
         this.notifications = notifications;
         this.mentions = mentions;
+        this.events = events;
+        this.flags = flags;
     }
 
     // ------------------------------------------------------------ 조회 (권한 포함)
@@ -316,6 +323,7 @@ public class PostService {
                 .addValue("now", Timestamp.from(Instant.now(clock))));
         if (inserted == 1) {
             notifications.notify(row.author().id(), viewerId, NotificationType.LIKE, row.id(), null, null, null);
+            events.record(viewerId, "LIKE", row.id(), row.author().id(), null);
         }
         return new LikeResult(true, bumpLikes(row.id(), inserted));
     }
@@ -341,6 +349,7 @@ public class PostService {
                 .addValue("now", Timestamp.from(Instant.now(clock))));
         jdbc.update("update posts set save_count = save_count + :d where id = :id",
                 Map.of("d", inserted, "id", row.id()));
+        if (inserted == 1) events.record(viewerId, "SAVE", row.id(), row.author().id(), null);
         return new SaveResult(true);
     }
 
@@ -385,6 +394,7 @@ public class PostService {
         int count = bumpReposts(row.id());
         if (existing == null || existing == 0) {
             notifications.notify(row.author().id(), viewerId, NotificationType.REPOST, row.id(), null, null, note);
+            events.record(viewerId, "SHARE", row.id(), row.author().id(), null);
         }
         return new RepostResult(true, count);
     }
@@ -413,16 +423,17 @@ public class PostService {
 
     // ------------------------------------------------------------ 도우미
 
-    private static String validateCaption(String caption) {
+    private String validateCaption(String caption) {
         String value = caption == null ? null : caption.strip();
         if (value == null || value.isEmpty()) return null;
         if (value.length() > Hashtags.MAX_CAPTION) {
             throw ApiException.badRequest("CAPTION_TOO_LONG",
                     "캡션은 " + String.format("%,d", Hashtags.MAX_CAPTION) + "자까지 쓸 수 있습니다.");
         }
-        if (Hashtags.extract(value).size() > Hashtags.MAX_PER_POST) {
+        int limit = flags.get().hashtagLimit();
+        if (Hashtags.extract(value).size() > limit) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "TOO_MANY_HASHTAGS",
-                    "해시태그는 게시물당 " + Hashtags.MAX_PER_POST + "개까지 쓸 수 있습니다.");
+                    "해시태그는 게시물당 " + limit + "개까지 쓸 수 있습니다.");
         }
         return value;
     }

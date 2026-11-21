@@ -150,7 +150,8 @@ class PostAndFeedIntegrationTest {
         Instant previous = Instant.MAX;
         String cursor = null;
         for (int page = 0; page < 4; page++) {
-            String body = mvc.perform(get("/api/feed").param("cursor", cursor == null ? "" : cursor).session(session))
+            String body = mvc.perform(get("/api/feed").param("mode", "following")
+                            .param("cursor", cursor == null ? "" : cursor).session(session))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             List<Number> authors = JsonPath.read(body, "$.items[*].author.id");
             List<String> codes = JsonPath.read(body, "$.items[*].shortcode");
@@ -189,7 +190,7 @@ class PostAndFeedIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         String code = JsonPath.read(body, "$.shortcode");
 
-        mvc.perform(get("/api/feed").session(session))
+        mvc.perform(get("/api/feed").param("mode", "following").session(session))
                 .andExpect(jsonPath("$.items[0].shortcode").value(code));
         assertThat(jdbc.queryForObject("select posts_count from users where username = ?", Integer.class, username))
                 .isEqualTo(before + 1);

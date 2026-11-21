@@ -2,6 +2,7 @@ package com.yangstagram.follow;
 
 import com.yangstagram.common.error.ApiException;
 import com.yangstagram.common.time.LabClock;
+import com.yangstagram.event.EventService;
 import com.yangstagram.notification.NotificationService;
 import com.yangstagram.notification.NotificationType;
 import com.yangstagram.user.dto.UserRows;
@@ -27,11 +28,14 @@ public class FollowService {
     private final NamedParameterJdbcTemplate jdbc;
     private final LabClock clock;
     private final NotificationService notifications;
+    private final EventService events;
 
-    public FollowService(NamedParameterJdbcTemplate jdbc, LabClock clock, NotificationService notifications) {
+    public FollowService(NamedParameterJdbcTemplate jdbc, LabClock clock, NotificationService notifications,
+                         EventService events) {
         this.jdbc = jdbc;
         this.clock = clock;
         this.notifications = notifications;
+        this.events = events;
     }
 
     public record UserListItem(UserSummary user, Relationship relationship) {
@@ -110,6 +114,7 @@ public class FollowService {
                 .addValue("status", status.name()).addValue("now", Timestamp.from(Instant.now(clock))));
         if (inserted == 1) {
             if (status == FollowStatus.ACCEPTED) adjustCounts(viewerId, targetId, +1);
+            events.record(viewerId, "FOLLOW", null, targetId, null);
             notifications.notify(targetId, viewerId,
                     status == FollowStatus.ACCEPTED ? NotificationType.FOLLOW : NotificationType.FOLLOW_REQUEST,
                     null, null, null, null);
@@ -125,6 +130,7 @@ public class FollowService {
                 Map.of("a", viewerId, "b", targetId), String.class);
         if (!deleted.isEmpty() && FollowStatus.valueOf(deleted.getFirst()) == FollowStatus.ACCEPTED) {
             adjustCounts(viewerId, targetId, -1);
+            events.record(viewerId, "UNFOLLOW", null, targetId, null);
         }
         notifications.retract(viewerId, NotificationType.FOLLOW, null, null, null, targetId);
         notifications.retract(viewerId, NotificationType.FOLLOW_REQUEST, null, null, null, targetId);

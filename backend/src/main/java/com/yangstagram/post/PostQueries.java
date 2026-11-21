@@ -3,6 +3,7 @@ package com.yangstagram.post;
 import com.yangstagram.common.paging.Cursor;
 import com.yangstagram.common.paging.Slice;
 import com.yangstagram.common.time.LabClock;
+import com.yangstagram.lab.FeatureFlags;
 import com.yangstagram.follow.FollowService;
 import com.yangstagram.follow.Relationship;
 import com.yangstagram.post.dto.PostDtos.CommentView;
@@ -57,13 +58,15 @@ public class PostQueries {
     private final FollowService followService;
     private final StoryRings storyRings;
     private final LabClock clock;
+    private final FeatureFlags flags;
 
     public PostQueries(NamedParameterJdbcTemplate jdbc, FollowService followService, StoryRings storyRings,
-                       LabClock clock) {
+                       LabClock clock, FeatureFlags flags) {
         this.jdbc = jdbc;
         this.followService = followService;
         this.storyRings = storyRings;
         this.clock = clock;
+        this.flags = flags;
     }
 
     /** 권한 판정·수정에 필요한 게시물 기본 정보 */
@@ -157,6 +160,23 @@ public class PostQueries {
         FeedRow last = rows.get(limit - 1);
         return new Slice<>(views.subList(0, Math.min(limit, views.size())),
                 new Cursor(last.ts(), last.postId()).encode());
+    }
+
+    /**
+     * 순위 피드용: 주어진 게시물 중 "팔로우하는 사람이 리포스트해서" 들어온 것(작성자를 팔로우하지 않음)의 리포스트 정보.
+     */
+    public Map<Long, Repost> followeeReposts(long viewerId, List<Long> postIds) {
+        if (postIds.isEmpty()) return Map.of();
+        List<FeedRow> rows = jdbc.query("""
+                select distinct on (r.post_id) r.post_id, r.created_at, r.user_id
+                from reposts r join posts p on p.id = r.post_id
+                where r.post_id in (:ids) and p.author_id <> :me
+                  and r.user_id in (select following_id from follows where follower_id = :me and status = 'ACCEPTED')
+                  and p.author_id not in (select following_id from follows where follower_id = :me and status = 'ACCEPTED')
+                order by r.post_id, r.created_at desc
+                """, new MapSqlParameterSource("ids", postIds).addValue("me", viewerId),
+                (rs, i) -> new FeedRow(rs.getLong(1), rs.getTimestamp(2).toInstant(), rs.getLong(3)));
+        return repostInfo(rows);
     }
 
     private Map<Long, Repost> repostInfo(List<FeedRow> rows) {
@@ -291,7 +311,7 @@ public class PostQueries {
         boolean hidden = rs.getBoolean("hide_like_count") && rs.getLong("author_id") != viewerId;
         return new GridItem(rs.getString("shortcode"), rs.getString("thumb_url"), rs.getInt("media_count"),
                 hidden ? null : rs.getInt("like_count"), rs.getInt("comment_count"), rs.getString("type"),
-                rs.getInt("view_count"));
+                rs.getInt("view_count"), null);
     }
 
     // ------------------------------------------------------------ 채우기
@@ -304,6 +324,7 @@ public class PostQueries {
     public List<PostView> views(List<Long> ids, long viewerId, Map<Long, Repost> reposts) {
         if (ids.isEmpty()) return List.of();
         Instant now = Instant.now(clock);
+        boolean hideAll = flags.get().hideLikeCounts();
         MapSqlParameterSource p = new MapSqlParameterSource("ids", ids).addValue("me", viewerId);
 
         Map<Long, PostRow> rows = new LinkedHashMap<>();
@@ -396,11 +417,12 @@ public class PostQueries {
             boolean mine = r.author().id() == viewerId;
             result.add(new PostView(r.id(), r.shortcode(), r.author(), rel.get(r.author().id()), r.caption(),
                     locations.get(id), media.getOrDefault(id, List.of()),
-                    r.hideLikeCount() && !mine ? null : r.likeCount(), r.commentCount(), liked.contains(id),
+                    (r.hideLikeCount() || hideAll) && !mine ? null : r.likeCount(), r.commentCount(), liked.contains(id),
                     likedBy.get(id), r.hideLikeCount(), r.commentsDisabled(), r.createdAt(), mine,
                     previews.getOrDefault(id, List.of()), saved.contains(id), reposted.contains(id),
                     r.repostCount(), reposts.get(id), rings.get(r.author().id()), r.type(), r.viewCount(),
-                    tags.getOrDefault(id, List.of()), collaborators.getOrDefault(id, List.of()), invited.contains(id)));
+                    tags.getOrDefault(id, List.of()), collaborators.getOrDefault(id, List.of()), invited.contains(id),
+                    null));
         }
         return result;
     }

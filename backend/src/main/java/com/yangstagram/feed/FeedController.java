@@ -1,5 +1,6 @@
 package com.yangstagram.feed;
 
+import com.yangstagram.algo.Recommendations;
 import com.yangstagram.auth.CurrentUser;
 import com.yangstagram.common.paging.Cursor;
 import com.yangstagram.common.paging.Slice;
@@ -14,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 홈 피드. MVP는 "팔로잉" 모드(시간순)만 — 추천 섞기(§6.5)는 M4 알고리즘 단계에서.
+ * 홈 피드.
+ * home(기본): 점수 순 + 추천 섞기 (기획서 §6.5) / following: 팔로우하는 사람 글 최신순 / favorites: 즐겨찾기만 최신순.
  */
 @RestController
 @RequestMapping("/api")
@@ -24,16 +26,20 @@ public class FeedController {
 
     private final PostQueries queries;
     private final FollowService followService;
+    private final Recommendations recommendations;
 
-    public FeedController(PostQueries queries, FollowService followService) {
+    public FeedController(PostQueries queries, FollowService followService, Recommendations recommendations) {
         this.queries = queries;
         this.followService = followService;
+        this.recommendations = recommendations;
     }
 
     @GetMapping("/feed")
     public Slice<PostView> feed(@RequestParam(required = false) String cursor,
-                                @RequestParam(defaultValue = "following") String mode) {
-        return queries.feed(CurrentUser.requireId(), Cursor.decode(cursor), PAGE, "favorites".equals(mode));
+                                @RequestParam(defaultValue = "home") String mode) {
+        long me = CurrentUser.requireId();
+        if ("home".equals(mode)) return recommendations.home(me, cursor);
+        return queries.feed(me, Cursor.decode(cursor), PAGE, "favorites".equals(mode));
     }
 
     /** 홈 오른쪽·피드 끝의 "회원님을 위한 추천" */

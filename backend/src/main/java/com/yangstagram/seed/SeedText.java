@@ -7,13 +7,13 @@ import java.util.Map;
  * 가짜 게시물·댓글에 쓰는 문장 틀 (기획서 §8.3, 결정 D4: 문장 틀 조합).
  * 사진(Lorem Picsum)은 주제별로 분류되어 있지 않아 캡션과 사진이 딱 맞지 않을 수 있다 → M2에서 주제별 사진으로 교체.
  */
-final class SeedText {
+public final class SeedText {
 
     private SeedText() {
     }
 
     /** 주제별 캡션 첫 문장 */
-    static final Map<Topic, List<String>> CAPTIONS = Map.ofEntries(
+    public static final Map<Topic, List<String>> CAPTIONS = Map.ofEntries(
             Map.entry(Topic.TRAVEL, List.of("다시 가고 싶은 곳", "여행은 역시 걷는 맛", "이번 여행 사진 정리 중", "공항 가는 길이 제일 설렘", "길을 잃어도 좋았던 하루")),
             Map.entry(Topic.FOOD, List.of("여기 진짜 맛집이에요", "웨이팅 할 만했다", "오늘의 한 끼", "또 먹으러 갈 예정", "맛있는 건 0칼로리")),
             Map.entry(Topic.CAFE, List.of("오늘의 카페", "창가 자리 성공", "커피 한 잔의 여유", "디저트까지 완벽", "주말 카페 투어")),
@@ -77,7 +77,7 @@ final class SeedText {
             new String[] {"도쿄 시부야", "도쿄"}, new String[] {"오사카 도톤보리", "오사카"}, new String[] {"파리 에펠탑", "파리"});
 
     /** 짧은 반응 댓글 */
-    static final List<String> COMMENTS = List.of(
+    public static final List<String> COMMENTS = List.of(
             "너무 예뻐요 😍", "여기 어디예요?", "와 분위기 미쳤다", "저도 가 보고 싶어요!", "사진 너무 잘 찍으셨다",
             "👏👏👏", "🔥🔥", "❤️", "좋아요 누르고 갑니다", "색감 대박", "부럽다…", "다음에 같이 가요",
             "이거 보고 저장했어요", "완전 내 스타일", "와우", "오늘도 멋지네요", "최고예요 👍", "ㅋㅋㅋㅋ 귀여워",

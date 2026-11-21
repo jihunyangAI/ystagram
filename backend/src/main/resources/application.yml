@@ -30,6 +30,15 @@ spring:
 server:
   port: 8080
 
+# 콘솔과 함께 파일에도 남긴다 (storage/는 Git 제외). 7일·파일당 10MB까지
+logging:
+  file:
+    name: ../storage/logs/backend.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+
 yangstagram:
   # 가짜 데이터: DB가 비어 있으면 시작할 때 자동 생성
   seed:

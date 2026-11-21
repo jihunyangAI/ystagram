@@ -102,7 +102,8 @@ public class SeedService {
                                conversation_members, messages, message_reactions, collections,
                                collection_posts, saved_posts, reposts, comment_likes, search_history,
                                blocks, restricts, mutes, close_friends, story_sticker_responses, highlights,
-                               highlight_items, post_tags, post_collaborators, post_views
+                               highlight_items, post_tags, post_collaborators, post_views,
+                               events, user_topic_prefs
                                restart identity cascade
                 """);
 
@@ -124,12 +125,13 @@ public class SeedService {
         SeedSocial.Result social = new SeedSocial(jdbc, rnd, now,
                 photos.values().stream().flatMap(List::stream).toList()).generate(users, follows);
         new SeedExtras(jdbc, rnd, now, json).generate(users, follows);
+        int events = new SeedEvents(jdbc, now, seed).generate();
 
         long elapsed = System.currentTimeMillis() - started;
         log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, 게시물={}, 좋아요={}, 댓글={}, "
-                        + "릴스={}, 스토리={}, 대화방={}, 메시지={}, 알림={}, {}ms",
+                        + "릴스={}, 스토리={}, 대화방={}, 메시지={}, 알림={}, 이벤트={}, {}ms",
                 size, seed, users.size(), follows.size(), content.posts(), content.likes(), content.comments(), reels,
-                social.stories(), social.conversations(), social.messages(), social.notifications(), elapsed);
+                social.stories(), social.conversations(), social.messages(), social.notifications(), events, elapsed);
         return new SeedResult(size, seed, users.size(), follows.size(), content.posts(), content.likes(),
                 content.comments(), reels, social.stories(), social.conversations(), social.messages(),
                 social.notifications(), elapsed);

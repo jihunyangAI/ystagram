@@ -336,7 +336,8 @@ class SocialIntegrationTest {
                 .andExpect(jsonPath("$.reposted").value(true)).andExpect(jsonPath("$.repostCount").value(1));
 
         MockHttpSession follower = loginAs((String) row.get("f"));
-        String feed = mvc.perform(get("/api/feed").session(follower)).andReturn().getResponse().getContentAsString();
+        String feed = mvc.perform(get("/api/feed").param("mode", "following").session(follower))
+                .andReturn().getResponse().getContentAsString();
         List<String> reposters = JsonPath.read(feed, "$.items[?(@.shortcode == '" + code + "')].repost.by.username");
         assertThat(reposters).containsExactly((String) row.get("r"));
 

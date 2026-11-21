@@ -3,6 +3,7 @@ package com.yangstagram.comment;
 import com.yangstagram.common.error.ApiException;
 import com.yangstagram.common.paging.Slice;
 import com.yangstagram.common.time.LabClock;
+import com.yangstagram.event.EventService;
 import com.yangstagram.notification.Mentions;
 import com.yangstagram.notification.NotificationService;
 import com.yangstagram.notification.NotificationType;
@@ -58,16 +59,18 @@ public class CommentService {
     private final Mentions mentions;
     private final RelationService relations;
     private final LabClock clock;
+    private final EventService events;
 
     public CommentService(NamedParameterJdbcTemplate jdbc, PostService postService,
                           NotificationService notifications, Mentions mentions, RelationService relations,
-                          LabClock clock) {
+                          LabClock clock, EventService events) {
         this.jdbc = jdbc;
         this.postService = postService;
         this.notifications = notifications;
         this.mentions = mentions;
         this.relations = relations;
         this.clock = clock;
+        this.events = events;
     }
 
     // ------------------------------------------------------------ 목록
@@ -165,6 +168,7 @@ public class CommentService {
         }
         Set<Long> notified = new HashSet<>();
         notified.add(viewerId);
+        events.record(viewerId, "COMMENT", post.id(), post.author().id(), null);
         notifications.notify(post.author().id(), viewerId, NotificationType.COMMENT, post.id(), id, null, body);
         notified.add(post.author().id());
         if (parentAuthor != null && notified.add(parentAuthor)) {
