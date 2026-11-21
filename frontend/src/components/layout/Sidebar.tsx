@@ -5,7 +5,6 @@ import { useLogout } from '../../lib/auth'
 import type { Me } from '../../lib/types'
 import { Avatar } from '../Avatar'
 import { Logo, LogoMark } from '../Logo'
-import { toast } from '../Toast'
 import { SIDEBAR_ITEMS } from './nav'
 
 const itemClass = (active: boolean) =>
@@ -39,10 +38,14 @@ export function Sidebar({ me }: { me: Me }) {
             )}
           </NavLink>
         ))}
-        <button className={itemClass(false)} title="만들기" onClick={() => toast('게시물 만들기는 M1 단계에서 추가됩니다')}>
-          <SquarePlus size={24} strokeWidth={1.8} />
-          <span className="hidden xl:inline">만들기</span>
-        </button>
+        <NavLink to="/create" className={({ isActive }) => itemClass(isActive)} title="만들기">
+          {({ isActive }) => (
+            <>
+              <SquarePlus size={24} strokeWidth={isActive ? 2.6 : 1.8} />
+              <span className="hidden xl:inline">만들기</span>
+            </>
+          )}
+        </NavLink>
         <NavLink to={`/${me.user.username}`} className={({ isActive }) => itemClass(isActive)} title="프로필">
           <Avatar user={me.user} size={24} />
           <span className="hidden xl:inline">프로필</span>

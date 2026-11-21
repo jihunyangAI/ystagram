@@ -4,7 +4,6 @@ import clsx from 'clsx'
 import type { Me } from '../../lib/types'
 import { Avatar } from '../Avatar'
 import { Logo } from '../Logo'
-import { toast } from '../Toast'
 import { BOTTOM_ITEMS } from './nav'
 
 /** 모바일 상단 바: 만들기(+) · 로고 · 알림 (홈 화면에서만 표시) */
@@ -13,9 +12,9 @@ export function MobileTopBar() {
   if (pathname !== '/') return null
   return (
     <header className="sticky top-0 z-30 flex h-[52px] items-center justify-between border-b border-border bg-bg px-3 md:hidden">
-      <button aria-label="만들기" className="p-1" onClick={() => toast('게시물 만들기는 M1 단계에서 추가됩니다')}>
+      <Link to="/create" aria-label="만들기" className="p-1">
         <SquarePlus size={26} strokeWidth={1.8} />
-      </button>
+      </Link>
       <Link to="/" aria-label="홈">
         <Logo />
       </Link>

@@ -39,7 +39,7 @@ class SeedPhotos {
     /** 비율별 사진 묶음 (캐러셀은 같은 비율끼리 묶는다) */
     Map<String, List<Photo>> load() {
         Map<String, List<Photo>> byRatio = new LinkedHashMap<>();
-        Path manifest = props.seedDir().resolve("manifest.json");
+        Path manifest = props.seed().resolve("manifest.json");
         if (Files.isRegularFile(manifest)) {
             try {
                 ManifestEntry[] entries = json.readValue(manifest.toFile(), ManifestEntry[].class);

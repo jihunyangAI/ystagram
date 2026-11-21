@@ -124,3 +124,40 @@ body {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* 더블탭 좋아요 하트 */
+@keyframes heart-pop {
+  0% { transform: scale(0); opacity: 0; }
+  15% { transform: scale(1.2); opacity: 0.95; }
+  30% { transform: scale(0.95); opacity: 0.95; }
+  45%, 80% { transform: scale(1); opacity: 0.95; }
+  100% { transform: scale(0.2); opacity: 0; }
+}
+.animate-heart-pop {
+  animation: heart-pop 0.9s ease-out forwards;
+}
+
+/* 좋아요 버튼 누를 때 살짝 튀는 효과 */
+@keyframes like-bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.animate-like-bounce {
+  animation: like-bounce 0.35s ease-out;
+}
+
+/* 가로 스크롤 영역의 스크롤바 숨김 (캐러셀) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-heart-pop,
+  .animate-like-bounce {
+    animation-duration: 0.01ms;
+  }
+}

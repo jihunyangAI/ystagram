@@ -27,7 +27,7 @@ export function LabPage() {
   const reseed = useMutation({
     mutationFn: () => api.post<SeedResult>('/api/lab/seed', { size, seed: Number(seed) }),
     onSuccess: (r) => {
-      toast(`사용자 ${r.users}명, 팔로우 ${r.follows}개를 만들었습니다 (${r.elapsedMillis}ms). 다시 로그인하세요.`)
+      toast(`사용자 ${r.users}명, 게시물 ${r.posts}개, 좋아요 ${r.likes}개를 만들었습니다 (${r.elapsedMillis}ms). 다시 로그인하세요.`)
       setSession(null)
       navigate('/accounts/login')
     },
@@ -45,6 +45,8 @@ export function LabPage() {
     ? [
         { label: '사용자', value: s.users, sub: `가짜 ${s.fakeUsers}명` },
         { label: '팔로우', value: s.follows, sub: `승인 대기 ${s.pendingFollows}개` },
+        { label: '게시물', value: s.posts, sub: `해시태그 ${s.hashtags}개` },
+        { label: '좋아요 · 댓글', value: s.likes, sub: `댓글 ${s.comments.toLocaleString('ko-KR')}개` },
         { label: '가상 시계', value: s.clockOffsetMinutes === 0 ? '실제 시간' : `+${s.clockOffsetMinutes}분`, sub: new Date(s.now).toLocaleString('ko-KR') },
         { label: '가짜 계정 비밀번호', value: s.fakePassword, sub: '모든 가짜 계정 공통' },
       ]

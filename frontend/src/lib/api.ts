@@ -48,14 +48,16 @@ async function request<T>(method: string, url: string, body?: unknown, retried =
   const unsafe = method !== 'GET'
   if (unsafe) await ensureCsrf()
 
+  const form = body instanceof FormData
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  // FormData(파일 업로드)는 브라우저가 multipart 경계값을 붙여 주므로 Content-Type을 직접 쓰지 않는다
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json'
   if (unsafe) headers['X-XSRF-TOKEN'] = readCookie('XSRF-TOKEN') ?? ''
 
   const res = await fetch(url, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   })
 
   // 로그아웃·로그인 뒤에는 CSRF 토큰이 바뀔 수 있다 → 새로 받아 한 번만 다시 시도
@@ -75,4 +77,6 @@ export const api = {
   put: <T>(url: string, body?: unknown) => request<T>('PUT', url, body),
   patch: <T>(url: string, body?: unknown) => request<T>('PATCH', url, body),
   delete: <T>(url: string) => request<T>('DELETE', url),
+  /** multipart 업로드 (FormData) */
+  upload: <T>(method: 'POST' | 'PUT', url: string, form: FormData) => request<T>(method, url, form),
 }

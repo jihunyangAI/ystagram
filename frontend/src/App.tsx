@@ -10,6 +10,9 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { SignupPage } from './pages/auth/SignupPage'
+import { EditProfilePage } from './pages/account/EditProfilePage'
+import { CreatePostPage } from './pages/post/CreatePostPage'
+import { PostPage } from './pages/post/PostPage'
 
 export default function App() {
   return (
@@ -25,6 +28,9 @@ export default function App() {
           <Route path="explore" element={<ComingSoonPage title="탐색" stage="M3" icon={Compass} />} />
           <Route path="explore/search" element={<ComingSoonPage title="검색" stage="M2" icon={Search} />} />
           <Route path="notifications" element={<ComingSoonPage title="알림" stage="M2" icon={Heart} />} />
+          <Route path="create" element={<CreatePostPage />} />
+          <Route path="p/:shortcode" element={<PostPage />} />
+          <Route path="accounts/edit" element={<EditProfilePage />} />
           <Route path="lab" element={<LabPage />} />
           <Route path=":username" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />

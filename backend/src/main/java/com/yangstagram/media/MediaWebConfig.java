@@ -23,7 +23,7 @@ public class MediaWebConfig implements WebMvcConfigurer {
                 .addResourceLocations(dirUri(props.uploadDir()))
                 .setCacheControl(cache);
         registry.addResourceHandler("/media/seed/**")
-                .addResourceLocations(dirUri(props.seedDir()))
+                .addResourceLocations(dirUri(props.seed()))
                 .setCacheControl(cache);
     }
 
