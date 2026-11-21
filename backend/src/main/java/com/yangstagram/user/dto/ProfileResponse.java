@@ -1,6 +1,7 @@
 package com.yangstagram.user.dto;
 
 import com.yangstagram.follow.Relationship;
+import com.yangstagram.story.StoryRings.Ring;
 import com.yangstagram.user.AccountType;
 import com.yangstagram.user.User;
 
@@ -10,6 +11,7 @@ import com.yangstagram.user.User;
  * @param relationship   보는 사람 → 이 사용자 관계 (버튼 문구)
  * @param followsMe      이 사용자가 나를 팔로우 중인가 ("맞팔로우" 버튼)
  * @param canViewContent 게시물·팔로워 목록을 볼 수 있는가 (비공개 계정 잠금)
+ * @param story          프로필 사진 둘레 스토리 링 (누르면 스토리 열기)
  */
 public record ProfileResponse(
         UserSummary user,
@@ -25,12 +27,14 @@ public record ProfileResponse(
         boolean me,
         Relationship relationship,
         boolean followsMe,
-        boolean canViewContent) {
+        boolean canViewContent,
+        Ring story) {
 
-    public static ProfileResponse of(User u, Relationship relationship, boolean followsMe, boolean canViewContent) {
+    public static ProfileResponse of(User u, Relationship relationship, boolean followsMe, boolean canViewContent,
+                                     Ring story) {
         return new ProfileResponse(UserSummary.from(u), u.getBio(), u.getPronouns(), u.getWebsite(),
                 u.getAccountType(), u.getCategory(), u.isAiProfile(), u.getFollowersCount(),
                 u.getFollowingCount(), u.getPostsCount(), relationship == Relationship.SELF, relationship,
-                followsMe, canViewContent);
+                followsMe, canViewContent, story);
     }
 }

@@ -10,6 +10,10 @@ import com.yangstagram.post.PostQueries.PostRow;
 import com.yangstagram.post.dto.PostDtos.CommentView;
 import com.yangstagram.post.dto.PostDtos.CreateCommentRequest;
 import com.yangstagram.post.dto.PostDtos.CreatePostRequest;
+import com.yangstagram.post.dto.PostDtos.EditCommentRequest;
+import com.yangstagram.post.dto.PostDtos.RepostRequest;
+import com.yangstagram.post.dto.PostDtos.RepostResult;
+import com.yangstagram.post.dto.PostDtos.SaveResult;
 import com.yangstagram.post.dto.PostDtos.LikeResult;
 import com.yangstagram.post.dto.PostDtos.PostView;
 import com.yangstagram.post.dto.PostDtos.UpdatePostRequest;
@@ -123,6 +127,58 @@ public class PostController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteComment(@PathVariable long id) {
         commentService.delete(id, CurrentUser.requireId());
+    }
+
+    @PatchMapping("/comments/{id}")
+    public CommentView editComment(@PathVariable long id, @RequestBody EditCommentRequest req) {
+        return commentService.edit(id, CurrentUser.requireId(), req.body());
+    }
+
+    @GetMapping("/comments/{id}/replies")
+    public List<CommentView> replies(@PathVariable long id) {
+        return commentService.replies(id, CurrentUser.requireId());
+    }
+
+    @PutMapping("/comments/{id}/pin")
+    public CommentView pin(@PathVariable long id) {
+        return commentService.pin(id, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/comments/{id}/pin")
+    public CommentView unpin(@PathVariable long id) {
+        return commentService.pin(id, CurrentUser.requireId(), false);
+    }
+
+    @PutMapping("/comments/{id}/like")
+    public LikeResult likeComment(@PathVariable long id) {
+        return commentService.like(id, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/comments/{id}/like")
+    public LikeResult unlikeComment(@PathVariable long id) {
+        return commentService.like(id, CurrentUser.requireId(), false);
+    }
+
+    // ------------------------------------------------------------ 저장·리포스트
+
+    @PutMapping("/posts/{shortcode}/save")
+    public SaveResult save(@PathVariable String shortcode) {
+        return postService.save(shortcode, CurrentUser.requireId());
+    }
+
+    @DeleteMapping("/posts/{shortcode}/save")
+    public SaveResult unsave(@PathVariable String shortcode) {
+        return postService.unsave(shortcode, CurrentUser.requireId());
+    }
+
+    @PutMapping("/posts/{shortcode}/repost")
+    public RepostResult repost(@PathVariable String shortcode, @RequestBody(required = false) RepostRequest req) {
+        return postService.repost(shortcode, CurrentUser.requireId(), req == null ? null : req.note());
+    }
+
+    @DeleteMapping("/posts/{shortcode}/repost")
+    public RepostResult unrepost(@PathVariable String shortcode) {
+        return postService.unrepost(shortcode, CurrentUser.requireId());
     }
 
     // ------------------------------------------------------------ 위치 자동완성

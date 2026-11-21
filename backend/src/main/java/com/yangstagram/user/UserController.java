@@ -9,6 +9,7 @@ import com.yangstagram.follow.FollowStatus;
 import com.yangstagram.follow.Relationship;
 import com.yangstagram.post.PostQueries;
 import com.yangstagram.post.dto.PostDtos.GridItem;
+import com.yangstagram.story.StoryRings;
 import com.yangstagram.user.dto.ProfileResponse;
 import java.util.List;
 import java.util.Map;
@@ -30,11 +31,14 @@ public class UserController {
     private final UserService userService;
     private final FollowService followService;
     private final PostQueries postQueries;
+    private final StoryRings storyRings;
 
-    public UserController(UserService userService, FollowService followService, PostQueries postQueries) {
+    public UserController(UserService userService, FollowService followService, PostQueries postQueries,
+                          StoryRings storyRings) {
         this.userService = userService;
         this.followService = followService;
         this.postQueries = postQueries;
+        this.storyRings = storyRings;
     }
 
     @GetMapping("/{username}")
@@ -48,7 +52,7 @@ public class UserController {
         Relationship rel = followService.relationship(me, user.getId());
         boolean followsMe = me != user.getId() && followService.status(user.getId(), me) == FollowStatus.ACCEPTED;
         boolean canView = followService.canViewContent(me, user.getId(), user.isPrivateAccount());
-        return ProfileResponse.of(user, rel, followsMe, canView);
+        return ProfileResponse.of(user, rel, followsMe, canView, storyRings.ring(me, user.getId()));
     }
 
     /** 프로필 그리드 (3:4, 한 번에 12칸 = 4줄) */
@@ -58,6 +62,15 @@ public class UserController {
         User user = userService.getByUsername(username);
         followService.requireCanView(me, user.getId(), user.isPrivateAccount());
         return postQueries.grid(user.getId(), me, Cursor.decode(cursor), GRID_PAGE);
+    }
+
+    /** 프로필 "리포스트" 탭 */
+    @GetMapping("/{username}/reposts")
+    public Slice<GridItem> reposts(@PathVariable String username, @RequestParam(required = false) String cursor) {
+        long me = CurrentUser.requireId();
+        User user = userService.getByUsername(username);
+        followService.requireCanView(me, user.getId(), user.isPrivateAccount());
+        return postQueries.repostGrid(user.getId(), me, Cursor.decode(cursor), GRID_PAGE);
     }
 
     @GetMapping("/{username}/followers")

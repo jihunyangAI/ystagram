@@ -8,7 +8,12 @@ import com.yangstagram.media.StoredImage;
 import com.yangstagram.post.PostQueries.PostRow;
 import com.yangstagram.post.dto.PostDtos.CreatePostRequest;
 import com.yangstagram.post.dto.PostDtos.LikeResult;
+import com.yangstagram.notification.Mentions;
+import com.yangstagram.notification.NotificationService;
+import com.yangstagram.notification.NotificationType;
 import com.yangstagram.post.dto.PostDtos.PostView;
+import com.yangstagram.post.dto.PostDtos.RepostResult;
+import com.yangstagram.post.dto.PostDtos.SaveResult;
 import com.yangstagram.post.dto.PostDtos.UpdatePostRequest;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -36,14 +41,18 @@ public class PostService {
     private final FollowService followService;
     private final MediaStorage storage;
     private final LabClock clock;
+    private final NotificationService notifications;
+    private final Mentions mentions;
 
     public PostService(NamedParameterJdbcTemplate jdbc, PostQueries queries, FollowService followService,
-                       MediaStorage storage, LabClock clock) {
+                       MediaStorage storage, LabClock clock, NotificationService notifications, Mentions mentions) {
         this.jdbc = jdbc;
         this.queries = queries;
         this.followService = followService;
         this.storage = storage;
         this.clock = clock;
+        this.notifications = notifications;
+        this.mentions = mentions;
     }
 
     // ------------------------------------------------------------ 조회 (권한 포함)
@@ -117,6 +126,7 @@ public class PostService {
         }
         attachHashtags(postId, Hashtags.extract(caption));
         jdbc.update("update users set posts_count = posts_count + 1 where id = :id", Map.of("id", authorId));
+        mentions.notifyAll(caption, authorId, postId, null, Set.of());
         return queries.views(List.of(postId), authorId).getFirst();
     }
 
@@ -173,6 +183,9 @@ public class PostService {
                 on conflict do nothing
                 """, new MapSqlParameterSource("me", viewerId).addValue("post", row.id())
                 .addValue("now", Timestamp.from(Instant.now(clock))));
+        if (inserted == 1) {
+            notifications.notify(row.author().id(), viewerId, NotificationType.LIKE, row.id(), null, null, null);
+        }
         return new LikeResult(true, bumpLikes(row.id(), inserted));
     }
 
@@ -181,7 +194,84 @@ public class PostService {
         PostRow row = getVisible(shortcode, viewerId);
         int deleted = jdbc.update("delete from likes where user_id = :me and post_id = :post",
                 Map.of("me", viewerId, "post", row.id()));
+        notifications.retract(viewerId, NotificationType.LIKE, row.id(), null, null, null);
         return new LikeResult(false, bumpLikes(row.id(), -deleted));
+    }
+
+    // ------------------------------------------------------------ 저장 (컬렉션은 SavedService)
+
+    @Transactional
+    public SaveResult save(String shortcode, long viewerId) {
+        PostRow row = getVisible(shortcode, viewerId);
+        int inserted = jdbc.update("""
+                insert into saved_posts (user_id, post_id, created_at) values (:me, :post, :now)
+                on conflict do nothing
+                """, new MapSqlParameterSource("me", viewerId).addValue("post", row.id())
+                .addValue("now", Timestamp.from(Instant.now(clock))));
+        jdbc.update("update posts set save_count = save_count + :d where id = :id",
+                Map.of("d", inserted, "id", row.id()));
+        return new SaveResult(true);
+    }
+
+    /** 저장 취소하면 모든 컬렉션에서도 빠진다 */
+    @Transactional
+    public SaveResult unsave(String shortcode, long viewerId) {
+        PostRow row = getVisible(shortcode, viewerId);
+        int deleted = jdbc.update("delete from saved_posts where user_id = :me and post_id = :post",
+                Map.of("me", viewerId, "post", row.id()));
+        jdbc.update("""
+                delete from collection_posts where post_id = :post
+                  and collection_id in (select id from collections where user_id = :me)
+                """, Map.of("me", viewerId, "post", row.id()));
+        jdbc.update("update posts set save_count = greatest(0, save_count - :d) where id = :id",
+                Map.of("d", deleted, "id", row.id()));
+        return new SaveResult(false);
+    }
+
+    // ------------------------------------------------------------ 리포스트
+
+    /** 다른 사람의 공개 계정 게시물만 리포스트할 수 있다. 내 팔로워 피드와 프로필 "리포스트" 탭에 보인다. */
+    @Transactional
+    public RepostResult repost(String shortcode, long viewerId, String rawNote) {
+        PostRow row = getVisible(shortcode, viewerId);
+        if (row.author().id() == viewerId) {
+            throw ApiException.badRequest("CANNOT_REPOST_OWN", "내 게시물은 리포스트할 수 없습니다.");
+        }
+        if (row.author().isPrivate()) {
+            throw ApiException.forbidden("REPOST_NOT_ALLOWED", "비공개 계정의 게시물은 리포스트할 수 없습니다.");
+        }
+        String note = trimToNull(rawNote);
+        if (note != null && note.length() > 60) {
+            throw ApiException.badRequest("NOTE_TOO_LONG", "메모는 60자까지 쓸 수 있습니다.");
+        }
+        Integer existing = jdbc.queryForObject("select count(*) from reposts where user_id = :me and post_id = :post",
+                Map.of("me", viewerId, "post", row.id()), Integer.class);
+        jdbc.update("""
+                insert into reposts (user_id, post_id, note, created_at) values (:me, :post, :note, :now)
+                on conflict (user_id, post_id) do update set note = excluded.note
+                """, new MapSqlParameterSource("me", viewerId).addValue("post", row.id()).addValue("note", note)
+                .addValue("now", Timestamp.from(Instant.now(clock))));
+        int count = bumpReposts(row.id());
+        if (existing == null || existing == 0) {
+            notifications.notify(row.author().id(), viewerId, NotificationType.REPOST, row.id(), null, null, note);
+        }
+        return new RepostResult(true, count);
+    }
+
+    @Transactional
+    public RepostResult unrepost(String shortcode, long viewerId) {
+        PostRow row = getVisible(shortcode, viewerId);
+        jdbc.update("delete from reposts where user_id = :me and post_id = :post",
+                Map.of("me", viewerId, "post", row.id()));
+        notifications.retract(viewerId, NotificationType.REPOST, row.id(), null, null, null);
+        return new RepostResult(false, bumpReposts(row.id()));
+    }
+
+    private int bumpReposts(long postId) {
+        return jdbc.queryForObject("""
+                update posts set repost_count = (select count(*) from reposts where post_id = :id)
+                where id = :id returning repost_count
+                """, Map.of("id", postId), Integer.class);
     }
 
     private int bumpLikes(long postId, int delta) {

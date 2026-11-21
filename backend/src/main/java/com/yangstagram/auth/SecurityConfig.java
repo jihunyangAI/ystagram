@@ -28,6 +28,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/lab/**").permitAll() // 연구 도구 (로컬 전용)
                         .requestMatchers("/api/**").authenticated()
+                        .requestMatchers("/ws/**").authenticated() // 실시간 연결도 로그인 필요
                         .anyRequest().permitAll())
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())

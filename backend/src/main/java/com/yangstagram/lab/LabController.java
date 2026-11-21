@@ -56,6 +56,7 @@ public class LabController {
 
     public record LabStatus(long users, long fakeUsers, long follows, long pendingFollows,
                             long posts, long likes, long comments, long hashtags,
+                            long activeStories, long conversations, long messages, long notifications,
                             Instant now, long clockOffsetMinutes, String fakePassword) {
     }
 
@@ -79,8 +80,14 @@ public class LabController {
         Long likes = jdbc.queryForObject("select count(*) from likes", Long.class);
         Long comments = jdbc.queryForObject("select count(*) from comments", Long.class);
         Long hashtags = jdbc.queryForObject("select count(*) from hashtags", Long.class);
+        Long stories = jdbc.queryForObject(
+                "select count(*) from stories where deleted_at is null and expires_at > ? and created_at <= ?",
+                Long.class, java.sql.Timestamp.from(Instant.now(clock)), java.sql.Timestamp.from(Instant.now(clock)));
+        Long conversations = jdbc.queryForObject("select count(*) from conversations", Long.class);
+        Long messages = jdbc.queryForObject("select count(*) from messages", Long.class);
+        Long notifications = jdbc.queryForObject("select count(*) from notifications", Long.class);
         return new LabStatus(userRepository.count(), fake, follows, pending, posts, likes, comments, hashtags,
-                Instant.now(clock),
+                stories, conversations, messages, notifications, Instant.now(clock),
                 clock.getOffset().toMinutes(), seedProperties.fakePassword());
     }
 
@@ -99,6 +106,27 @@ public class LabController {
         User user = userService.getByUsername(username);
         sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response);
         return MeResponse.from(user);
+    }
+
+    /** addMinutes만큼 가상 시계를 앞으로 (reset이면 실제 시간으로 되돌림) */
+    public record ClockRequest(Long addMinutes, Boolean reset) {
+    }
+
+    public record ClockStatus(Instant now, long offsetMinutes) {
+    }
+
+    /**
+     * 시간 가속 (기획서 §7 L04): 스토리 24시간 만료, 15분 수정 제한 등을 기다리지 않고 확인.
+     * 뒤로 돌리는 것은 막는다 (이미 만든 데이터가 "미래"에 있게 되므로).
+     */
+    @PostMapping("/clock")
+    public ClockStatus clock(@RequestBody ClockRequest req) {
+        if (Boolean.TRUE.equals(req.reset())) {
+            clock.setOffset(java.time.Duration.ZERO);
+        } else if (req.addMinutes() != null && req.addMinutes() > 0) {
+            clock.setOffset(clock.getOffset().plusMinutes(Math.min(req.addMinutes(), 60L * 24 * 60)));
+        }
+        return new ClockStatus(Instant.now(clock), clock.getOffset().toMinutes());
     }
 
     /** 가짜 데이터를 모두 지우고 다시 만든다. 직접 가입한 계정도 지워지므로 세션도 끊는다. */

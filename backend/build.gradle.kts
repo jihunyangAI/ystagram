@@ -24,6 +24,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
+	implementation("org.springframework.boot:spring-boot-starter-websocket") // DM·알림 실시간 (STOMP)
 	implementation("org.flywaydb:flyway-database-postgresql")
 	implementation("net.datafaker:datafaker:2.7.0") // 가짜 데이터 생성
 	compileOnly("org.projectlombok:lombok")

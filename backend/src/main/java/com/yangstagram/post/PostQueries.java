@@ -2,6 +2,7 @@ package com.yangstagram.post;
 
 import com.yangstagram.common.paging.Cursor;
 import com.yangstagram.common.paging.Slice;
+import com.yangstagram.common.time.LabClock;
 import com.yangstagram.follow.FollowService;
 import com.yangstagram.follow.Relationship;
 import com.yangstagram.post.dto.PostDtos.CommentView;
@@ -9,9 +10,13 @@ import com.yangstagram.post.dto.PostDtos.GridItem;
 import com.yangstagram.post.dto.PostDtos.LocationView;
 import com.yangstagram.post.dto.PostDtos.MediaView;
 import com.yangstagram.post.dto.PostDtos.PostView;
+import com.yangstagram.post.dto.PostDtos.Repost;
+import com.yangstagram.story.StoryRings;
+import com.yangstagram.story.StoryRings.Ring;
 import com.yangstagram.user.dto.UserRows;
 import com.yangstagram.user.dto.UserSummary;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -33,115 +38,249 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PostQueries {
 
+    /** 댓글·DM 수정 가능 시간 (기획서 §6.2) */
+    public static final Duration EDIT_WINDOW = Duration.ofMinutes(15);
+
+    /**
+     * 보는 사람(:me)이 작성자(a)의 게시물을 볼 수 있는가 (§6.1의 SQL판).
+     * 목록 쿼리에서 users a를 조인하고 이 조건을 붙인다.
+     */
+    public static final String VISIBLE = """
+            (a.id = :me or not a.is_private or exists (
+             select 1 from follows vf where vf.follower_id = :me and vf.following_id = a.id
+             and vf.status = 'ACCEPTED'))
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
     private final FollowService followService;
+    private final StoryRings storyRings;
+    private final LabClock clock;
 
-    public PostQueries(NamedParameterJdbcTemplate jdbc, FollowService followService) {
+    public PostQueries(NamedParameterJdbcTemplate jdbc, FollowService followService, StoryRings storyRings,
+                       LabClock clock) {
         this.jdbc = jdbc;
         this.followService = followService;
+        this.storyRings = storyRings;
+        this.clock = clock;
     }
 
     /** 권한 판정·수정에 필요한 게시물 기본 정보 */
     public record PostRow(long id, String shortcode, UserSummary author, String caption, String location,
                           int likeCount, int commentCount, boolean hideLikeCount, boolean commentsDisabled,
-                          Instant createdAt) {
+                          Instant createdAt, int repostCount) {
     }
 
     private static final String ROW_SELECT = """
             select p.id, p.shortcode, p.caption, p.like_count, p.comment_count, p.hide_like_count,
-                   p.comments_disabled, p.created_at, l.id as location_id, l.name as location_name, %s
+                   p.comments_disabled, p.created_at, p.repost_count,
+                   l.id as location_id, l.name as location_name, %s
             from posts p
             join users a on a.id = p.author_id
             left join locations l on l.id = p.location_id
             """.formatted(UserRows.cols("a"));
 
+    private static PostRow readRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new PostRow(rs.getLong("id"), rs.getString("shortcode"), UserRows.read(rs, "a"),
+                rs.getString("caption"), rs.getString("location_name"),
+                rs.getInt("like_count"), rs.getInt("comment_count"), rs.getBoolean("hide_like_count"),
+                rs.getBoolean("comments_disabled"), rs.getTimestamp("created_at").toInstant(),
+                rs.getInt("repost_count"));
+    }
+
     public Optional<PostRow> findByShortcode(String shortcode) {
         return jdbc.query(ROW_SELECT + " where p.shortcode = :code and p.deleted_at is null and a.deleted_at is null",
-                Map.of("code", shortcode), (rs, i) -> new PostRow(
-                        rs.getLong("id"), rs.getString("shortcode"), UserRows.read(rs, "a"),
-                        rs.getString("caption"), rs.getString("location_name"),
-                        rs.getInt("like_count"), rs.getInt("comment_count"), rs.getBoolean("hide_like_count"),
-                        rs.getBoolean("comments_disabled"), rs.getTimestamp("created_at").toInstant()))
-                .stream().findFirst();
+                Map.of("code", shortcode), (rs, i) -> readRow(rs)).stream().findFirst();
     }
 
-    // ------------------------------------------------------------ 목록
+    // ------------------------------------------------------------ 홈 피드
 
-    /** 홈 피드: 내가 팔로우(승인됨)하는 사람과 내 게시물, 최신순 */
+    private record FeedRow(long postId, Instant ts, Long reposterId) {
+    }
+
+    /**
+     * 홈 피드: 내가 팔로우(승인됨)하는 사람과 내 게시물 + 팔로우하는 사람이 리포스트한 다른 사람의 공개 게시물.
+     * 같은 게시물은 한 번만 (가장 최근 리포스트 기준). 정렬 기준은 올린 시각 또는 리포스트한 시각.
+     */
     public Slice<PostView> feed(long viewerId, Cursor cursor, int limit) {
         MapSqlParameterSource p = new MapSqlParameterSource("me", viewerId).addValue("limit", limit + 1);
-        String after = applyCursor(cursor, p);
-        List<long[]> rows = jdbc.query("""
-                select p.id from posts p join users a on a.id = p.author_id
-                where p.deleted_at is null and a.deleted_at is null
-                  and (p.author_id = :me or p.author_id in
-                       (select following_id from follows where follower_id = :me and status = 'ACCEPTED'))
-                  %s
-                order by p.created_at desc, p.id desc
+        String after = "";
+        if (cursor != null) {
+            p.addValue("cts", Timestamp.from(cursor.createdAt())).addValue("cid", cursor.id());
+            after = "where (ts, post_id) < (:cts, :cid)";
+        }
+        List<FeedRow> rows = jdbc.query("""
+                with followees as (
+                  select following_id as id from follows where follower_id = :me and status = 'ACCEPTED'
+                ), items as (
+                  select p.id as post_id, p.created_at as ts, null::bigint as reposter
+                  from posts p join users a on a.id = p.author_id
+                  where p.deleted_at is null and a.deleted_at is null
+                    and (p.author_id = :me or p.author_id in (select id from followees))
+                  union all
+                  select r.post_id, r.created_at, r.user_id
+                  from reposts r
+                  join posts p on p.id = r.post_id
+                  join users a on a.id = p.author_id
+                  where r.user_id in (select id from followees)
+                    and p.deleted_at is null and a.deleted_at is null and not a.is_private
+                    and p.author_id <> :me and p.author_id not in (select id from followees)
+                ), dedup as (
+                  select distinct on (post_id) post_id, ts, reposter from items order by post_id, ts desc
+                )
+                select post_id, ts, reposter from dedup %s
+                order by ts desc, post_id desc
                 limit :limit
-                """.formatted(after), p, (rs, i) -> new long[] {rs.getLong(1)});
-        List<Long> ids = rows.stream().map(r -> r[0]).toList();
-        return sliceOf(views(ids, viewerId), limit);
+                """.formatted(after), p,
+                (rs, i) -> new FeedRow(rs.getLong(1), rs.getTimestamp(2).toInstant(), (Long) rs.getObject(3)));
+
+        Map<Long, Repost> reposts = repostInfo(rows);
+        List<PostView> views = views(rows.stream().map(FeedRow::postId).toList(), viewerId, reposts);
+        if (rows.size() <= limit) {
+            return new Slice<>(views, null);
+        }
+        FeedRow last = rows.get(limit - 1);
+        return new Slice<>(views.subList(0, Math.min(limit, views.size())),
+                new Cursor(last.ts(), last.postId()).encode());
     }
+
+    private Map<Long, Repost> repostInfo(List<FeedRow> rows) {
+        Map<Long, Repost> result = new HashMap<>();
+        List<FeedRow> reposted = rows.stream().filter(r -> r.reposterId() != null).toList();
+        if (reposted.isEmpty()) return result;
+        Map<Long, UserSummary> users = new HashMap<>();
+        jdbc.query("select %s from users u where u.id in (:ids)".formatted(UserRows.cols("u")),
+                Map.of("ids", reposted.stream().map(FeedRow::reposterId).toList()),
+                rs -> {
+                    UserSummary u = UserRows.read(rs, "u");
+                    users.put(u.id(), u);
+                });
+        Map<String, String> notes = new HashMap<>();
+        jdbc.query("select user_id, post_id, note from reposts where post_id in (:posts)",
+                Map.of("posts", reposted.stream().map(FeedRow::postId).toList()), rs -> {
+                    notes.put(rs.getLong(1) + ":" + rs.getLong(2), rs.getString(3));
+                });
+        for (FeedRow r : reposted) {
+            String note = notes.get(r.reposterId() + ":" + r.postId());
+            result.put(r.postId(), new Repost(users.get(r.reposterId()), note, r.ts()));
+        }
+        return result;
+    }
+
+    // ------------------------------------------------------------ 그리드
 
     /** 프로필 그리드: 최신순. 권한 확인은 호출하는 쪽에서 한다. */
     public Slice<GridItem> grid(long authorId, long viewerId, Cursor cursor, int limit) {
-        MapSqlParameterSource p = new MapSqlParameterSource("author", authorId).addValue("limit", limit + 1);
-        String after = applyCursor(cursor, p);
-        List<Object[]> rows = new ArrayList<>();
-        List<GridItem> items = jdbc.query("""
-                select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.created_at,
+        return gridOf("posts p join users a on a.id = p.author_id where p.author_id = :author",
+                "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
+    }
+
+    /** 이 사람이 리포스트한 게시물 (리포스트한 순) */
+    public Slice<GridItem> repostGrid(long userId, long viewerId, Cursor cursor, int limit) {
+        return gridOf("reposts r join posts p on p.id = r.post_id join users a on a.id = p.author_id "
+                        + "where r.user_id = :uid and " + VISIBLE,
+                "r.created_at", new MapSqlParameterSource("uid", userId), viewerId, cursor, limit);
+    }
+
+    /** 내가 저장한 게시물 (저장한 순), collectionId가 있으면 그 컬렉션만 */
+    public Slice<GridItem> savedGrid(long viewerId, Long collectionId, Cursor cursor, int limit) {
+        if (collectionId == null) {
+            return gridOf("saved_posts sp join posts p on p.id = sp.post_id join users a on a.id = p.author_id "
+                            + "where sp.user_id = :me and " + VISIBLE,
+                    "sp.created_at", new MapSqlParameterSource(), viewerId, cursor, limit);
+        }
+        return gridOf("collection_posts cp join posts p on p.id = cp.post_id join users a on a.id = p.author_id "
+                        + "where cp.collection_id = :cid and " + VISIBLE,
+                "cp.created_at", new MapSqlParameterSource("cid", collectionId), viewerId, cursor, limit);
+    }
+
+    /** 해시태그·장소 페이지의 최근 게시물 */
+    public Slice<GridItem> tagGrid(long tagId, long viewerId, Cursor cursor, int limit) {
+        return gridOf("post_hashtags ph join posts p on p.id = ph.post_id join users a on a.id = p.author_id "
+                        + "where ph.hashtag_id = :tag and " + VISIBLE,
+                "p.created_at", new MapSqlParameterSource("tag", tagId), viewerId, cursor, limit);
+    }
+
+    public Slice<GridItem> locationGrid(long locationId, long viewerId, Cursor cursor, int limit) {
+        return gridOf("posts p join users a on a.id = p.author_id where p.location_id = :loc and " + VISIBLE,
+                "p.created_at", new MapSqlParameterSource("loc", locationId), viewerId, cursor, limit);
+    }
+
+    /** 해시태그·장소 페이지 위쪽 "인기 게시물": 좋아요 많은 순 */
+    public List<GridItem> topPosts(String fromWhere, MapSqlParameterSource p, long viewerId, int limit) {
+        p.addValue("me", viewerId).addValue("limit", limit);
+        return jdbc.query("""
+                select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
                        m.thumb_url, (select count(*) from post_media x where x.post_id = p.id) as media_count
-                from posts p
-                join post_media m on m.post_id = p.id and m.position = 0
-                where p.author_id = :author and p.deleted_at is null %s
-                order by p.created_at desc, p.id desc
+                from %s and p.deleted_at is null and a.deleted_at is null
+                order by p.like_count desc, p.id desc
                 limit :limit
-                """.formatted(after), p, (rs, i) -> {
-            rows.add(new Object[] {rs.getTimestamp("created_at").toInstant(), rs.getLong("id")});
-            boolean hidden = rs.getBoolean("hide_like_count") && authorId != viewerId;
-            return new GridItem(rs.getString("shortcode"), rs.getString("thumb_url"), rs.getInt("media_count"),
-                    hidden ? null : rs.getInt("like_count"), rs.getInt("comment_count"));
+                """.formatted(joinMedia(fromWhere)), p, (rs, i) -> gridItem(rs, viewerId));
+    }
+
+    /**
+     * 그리드 공통. fromWhere는 "from"을 뺀 "테이블들 where 조건" (posts p, users a 별칭 필수),
+     * ts는 정렬·커서 기준 시각 컬럼.
+     */
+    private Slice<GridItem> gridOf(String fromWhere, String ts, MapSqlParameterSource p, long viewerId,
+                                   Cursor cursor, int limit) {
+        p.addValue("me", viewerId).addValue("limit", limit + 1);
+        String after = "";
+        if (cursor != null) {
+            p.addValue("cts", Timestamp.from(cursor.createdAt())).addValue("cid", cursor.id());
+            after = "and (%s, p.id) < (:cts, :cid)".formatted(ts);
+        }
+        List<Object[]> keys = new ArrayList<>();
+        List<GridItem> items = jdbc.query("""
+                select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
+                       %s as ts, m.thumb_url,
+                       (select count(*) from post_media x where x.post_id = p.id) as media_count
+                from %s and p.deleted_at is null and a.deleted_at is null %s
+                order by %s desc, p.id desc
+                limit :limit
+                """.formatted(ts, joinMedia(fromWhere), after, ts), p, (rs, i) -> {
+            keys.add(new Object[] {rs.getTimestamp("ts").toInstant(), rs.getLong("id")});
+            return gridItem(rs, viewerId);
         });
         if (items.size() <= limit) {
             return new Slice<>(items, null);
         }
-        Object[] last = rows.get(limit - 1);
+        Object[] last = keys.get(limit - 1);
         return new Slice<>(items.subList(0, limit), new Cursor((Instant) last[0], (Long) last[1]).encode());
     }
 
-    private static String applyCursor(Cursor cursor, MapSqlParameterSource p) {
-        if (cursor == null) return "";
-        p.addValue("cts", Timestamp.from(cursor.createdAt())).addValue("cid", cursor.id());
-        return "and (p.created_at, p.id) < (:cts, :cid)";
+    /** "... where 조건" 앞에 첫 번째 사진 조인을 끼워 넣는다 */
+    private static String joinMedia(String fromWhere) {
+        int at = fromWhere.indexOf(" where ");
+        return fromWhere.substring(0, at) + " join post_media m on m.post_id = p.id and m.position = 0"
+                + fromWhere.substring(at);
     }
 
-    private static Slice<PostView> sliceOf(List<PostView> views, int limit) {
-        if (views.size() <= limit) {
-            return new Slice<>(views, null);
-        }
-        PostView last = views.get(limit - 1);
-        return new Slice<>(views.subList(0, limit), new Cursor(last.createdAt(), last.id()).encode());
+    private static GridItem gridItem(java.sql.ResultSet rs, long viewerId) throws java.sql.SQLException {
+        boolean hidden = rs.getBoolean("hide_like_count") && rs.getLong("author_id") != viewerId;
+        return new GridItem(rs.getString("shortcode"), rs.getString("thumb_url"), rs.getInt("media_count"),
+                hidden ? null : rs.getInt("like_count"), rs.getInt("comment_count"));
     }
 
     // ------------------------------------------------------------ 채우기
 
-    /** id 순서를 유지한 채 화면용 게시물로 만든다. 지워진 게시물은 빠진다. */
     public List<PostView> views(List<Long> ids, long viewerId) {
+        return views(ids, viewerId, Map.of());
+    }
+
+    /** id 순서를 유지한 채 화면용 게시물로 만든다. 지워진 게시물은 빠진다. */
+    public List<PostView> views(List<Long> ids, long viewerId, Map<Long, Repost> reposts) {
         if (ids.isEmpty()) return List.of();
+        Instant now = Instant.now(clock);
         MapSqlParameterSource p = new MapSqlParameterSource("ids", ids).addValue("me", viewerId);
 
         Map<Long, PostRow> rows = new LinkedHashMap<>();
         Map<Long, LocationView> locations = new HashMap<>();
         jdbc.query(ROW_SELECT + " where p.id in (:ids) and p.deleted_at is null", p, rs -> {
-            long id = rs.getLong("id");
-            rows.put(id, new PostRow(id, rs.getString("shortcode"), UserRows.read(rs, "a"), rs.getString("caption"),
-                    rs.getString("location_name"), rs.getInt("like_count"), rs.getInt("comment_count"),
-                    rs.getBoolean("hide_like_count"), rs.getBoolean("comments_disabled"),
-                    rs.getTimestamp("created_at").toInstant()));
+            PostRow row = readRow(rs);
+            rows.put(row.id(), row);
             long locationId = rs.getLong("location_id");
             if (!rs.wasNull()) {
-                locations.put(id, new LocationView(locationId, rs.getString("location_name")));
+                locations.put(row.id(), new LocationView(locationId, rs.getString("location_name")));
             }
         });
 
@@ -155,8 +294,9 @@ public class PostQueries {
                     rs.getString("alt_text")));
         });
 
-        Set<Long> liked = new HashSet<>(jdbc.queryForList(
-                "select post_id from likes where user_id = :me and post_id in (:ids)", p, Long.class));
+        Set<Long> liked = idSet("select post_id from likes where user_id = :me and post_id in (:ids)", p);
+        Set<Long> saved = idSet("select post_id from saved_posts where user_id = :me and post_id in (:ids)", p);
+        Set<Long> reposted = idSet("select post_id from reposts where user_id = :me and post_id in (:ids)", p);
 
         Map<Long, UserSummary> likedBy = new HashMap<>();
         jdbc.query("""
@@ -175,7 +315,10 @@ public class PostQueries {
         rows.values().forEach(r -> postAuthor.put(r.id(), r.author().id()));
         jdbc.query("""
                 select * from (
-                  select c.id, c.post_id, c.body, c.created_at, c.parent_id, %s,
+                  select c.id, c.post_id, c.body, c.created_at, c.edited_at, c.pinned_at, c.like_count,
+                         exists (select 1 from comment_likes cl where cl.comment_id = c.id and cl.user_id = :me)
+                           as liked_by_me,
+                         %s,
                          row_number() over (partition by c.post_id order by c.created_at desc, c.id desc) as rn
                   from comments c join users u on u.id = c.author_id
                   where c.post_id in (:ids) and c.parent_id is null and u.deleted_at is null
@@ -183,14 +326,12 @@ public class PostQueries {
                 order by post_id, created_at, id
                 """.formatted(UserRows.cols("u")), p, rs -> {
             long postId = rs.getLong("post_id");
-            UserSummary author = UserRows.read(rs, "u");
-            boolean canDelete = author.id() == viewerId || postAuthor.getOrDefault(postId, -1L) == viewerId;
-            previews.computeIfAbsent(postId, k -> new ArrayList<>()).add(new CommentView(
-                    rs.getLong("id"), author, rs.getString("body"), rs.getTimestamp("created_at").toInstant(),
-                    null, canDelete));
+            previews.computeIfAbsent(postId, k -> new ArrayList<>()).add(comment(rs, viewerId,
+                    postAuthor.getOrDefault(postId, -1L), now, 0));
         });
 
         Map<Long, Relationship> rel = followService.relationships(viewerId, authorIds(rows.values()));
+        Map<Long, Ring> rings = storyRings.rings(viewerId, authorIds(rows.values()));
 
         List<PostView> result = new ArrayList<>(ids.size());
         for (Long id : ids) {
@@ -201,9 +342,40 @@ public class PostQueries {
                     locations.get(id), media.getOrDefault(id, List.of()),
                     r.hideLikeCount() && !mine ? null : r.likeCount(), r.commentCount(), liked.contains(id),
                     likedBy.get(id), r.hideLikeCount(), r.commentsDisabled(), r.createdAt(), mine,
-                    previews.getOrDefault(id, List.of())));
+                    previews.getOrDefault(id, List.of()), saved.contains(id), reposted.contains(id),
+                    r.repostCount(), reposts.get(id), rings.get(r.author().id())));
         }
         return result;
+    }
+
+    /**
+     * 댓글 한 줄을 화면용으로. 쿼리에는 c.id, c.body, c.created_at, c.edited_at, c.pinned_at, c.like_count,
+     * liked_by_me, 작성자 컬럼(u), (답글이면) parent_id가 있어야 한다.
+     */
+    public static CommentView comment(java.sql.ResultSet rs, long viewerId, long postAuthorId, Instant now,
+                                      int replyCount) throws java.sql.SQLException {
+        UserSummary author = UserRows.read(rs, "u");
+        Instant createdAt = rs.getTimestamp("created_at").toInstant();
+        Long parentId = hasColumn(rs, "parent_id") ? (Long) rs.getObject("parent_id") : null;
+        boolean mine = author.id() == viewerId;
+        return new CommentView(rs.getLong("id"), author, rs.getString("body"), createdAt, parentId,
+                mine || postAuthorId == viewerId,
+                mine && Duration.between(createdAt, now).compareTo(EDIT_WINDOW) <= 0,
+                postAuthorId == viewerId && parentId == null,
+                rs.getTimestamp("edited_at") != null, rs.getTimestamp("pinned_at") != null,
+                rs.getInt("like_count"), rs.getBoolean("liked_by_me"), replyCount);
+    }
+
+    private static boolean hasColumn(java.sql.ResultSet rs, String name) throws java.sql.SQLException {
+        var meta = rs.getMetaData();
+        for (int i = 1; i <= meta.getColumnCount(); i++) {
+            if (meta.getColumnLabel(i).equalsIgnoreCase(name)) return true;
+        }
+        return false;
+    }
+
+    private Set<Long> idSet(String sql, MapSqlParameterSource p) {
+        return new HashSet<>(jdbc.queryForList(sql, p, Long.class));
     }
 
     private static Collection<Long> authorIds(Collection<PostRow> rows) {

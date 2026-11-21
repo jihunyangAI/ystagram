@@ -2,6 +2,8 @@ package com.yangstagram.follow;
 
 import com.yangstagram.common.error.ApiException;
 import com.yangstagram.common.time.LabClock;
+import com.yangstagram.notification.NotificationService;
+import com.yangstagram.notification.NotificationType;
 import com.yangstagram.user.dto.UserRows;
 import com.yangstagram.user.dto.UserSummary;
 import java.sql.Timestamp;
@@ -24,10 +26,12 @@ public class FollowService {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final LabClock clock;
+    private final NotificationService notifications;
 
-    public FollowService(NamedParameterJdbcTemplate jdbc, LabClock clock) {
+    public FollowService(NamedParameterJdbcTemplate jdbc, LabClock clock, NotificationService notifications) {
         this.jdbc = jdbc;
         this.clock = clock;
+        this.notifications = notifications;
     }
 
     public record UserListItem(UserSummary user, Relationship relationship) {
@@ -88,8 +92,11 @@ public class FollowService {
                 on conflict (follower_id, following_id) do nothing
                 """, new MapSqlParameterSource("a", viewerId).addValue("b", targetId)
                 .addValue("status", status.name()).addValue("now", Timestamp.from(Instant.now(clock))));
-        if (inserted == 1 && status == FollowStatus.ACCEPTED) {
-            adjustCounts(viewerId, targetId, +1);
+        if (inserted == 1) {
+            if (status == FollowStatus.ACCEPTED) adjustCounts(viewerId, targetId, +1);
+            notifications.notify(targetId, viewerId,
+                    status == FollowStatus.ACCEPTED ? NotificationType.FOLLOW : NotificationType.FOLLOW_REQUEST,
+                    null, null, null, null);
         }
         return Relationship.of(status(viewerId, targetId));
     }
@@ -103,7 +110,77 @@ public class FollowService {
         if (!deleted.isEmpty() && FollowStatus.valueOf(deleted.getFirst()) == FollowStatus.ACCEPTED) {
             adjustCounts(viewerId, targetId, -1);
         }
+        notifications.retract(viewerId, NotificationType.FOLLOW, null, null, null, targetId);
+        notifications.retract(viewerId, NotificationType.FOLLOW_REQUEST, null, null, null, targetId);
         return Relationship.NONE;
+    }
+
+    // ------------------------------------------------------------ 팔로우 요청 (비공개 계정)
+
+    /** 나에게 온 승인 대기 요청 (최근 순) */
+    public List<UserListItem> requests(long me, int page, int size) {
+        List<UserSummary> users = jdbc.query("""
+                select %s from follows f join users u on u.id = f.follower_id
+                where f.following_id = :me and f.status = 'PENDING' and u.deleted_at is null
+                order by f.created_at desc, f.id desc
+                limit :limit offset :offset
+                """.formatted(UserRows.cols("u")),
+                new MapSqlParameterSource("me", me).addValue("limit", size).addValue("offset", page * size),
+                (rs, i) -> UserRows.read(rs, "u"));
+        Map<Long, Relationship> rel = relationships(me, users.stream().map(UserSummary::id).toList());
+        return users.stream().map(u -> new UserListItem(u, rel.get(u.id()))).toList();
+    }
+
+    /** 요청 승인: 상대가 내 팔로워가 된다 */
+    @Transactional
+    public void accept(long me, long requesterId) {
+        int updated = jdbc.update("""
+                update follows set status = 'ACCEPTED', created_at = :now
+                where follower_id = :a and following_id = :me and status = 'PENDING'
+                """, new MapSqlParameterSource("a", requesterId).addValue("me", me)
+                .addValue("now", Timestamp.from(Instant.now(clock))));
+        if (updated == 0) {
+            throw ApiException.notFound("팔로우 요청을 찾을 수 없습니다.");
+        }
+        adjustCounts(requesterId, me, +1);
+        notifications.retract(requesterId, NotificationType.FOLLOW_REQUEST, null, null, null, me);
+        notifications.notify(me, requesterId, NotificationType.FOLLOW, null, null, null, null);
+        notifications.notify(requesterId, me, NotificationType.FOLLOW_ACCEPTED, null, null, null, null);
+    }
+
+    /** 요청 거절 (상대에게는 알리지 않는다) */
+    @Transactional
+    public void decline(long me, long requesterId) {
+        jdbc.update("delete from follows where follower_id = :a and following_id = :me and status = 'PENDING'",
+                Map.of("a", requesterId, "me", me));
+        notifications.retract(requesterId, NotificationType.FOLLOW_REQUEST, null, null, null, me);
+    }
+
+    /** 내 팔로워에서 삭제 (상대에게 알리지 않음) */
+    @Transactional
+    public void removeFollower(long me, long followerId) {
+        List<String> deleted = jdbc.queryForList(
+                "delete from follows where follower_id = :a and following_id = :me returning status",
+                Map.of("a", followerId, "me", me), String.class);
+        if (!deleted.isEmpty() && FollowStatus.valueOf(deleted.getFirst()) == FollowStatus.ACCEPTED) {
+            adjustCounts(followerId, me, -1);
+        }
+    }
+
+    /** 계정 공개 범위 변경. 공개로 바꾸면 대기 중인 요청을 모두 승인한다. */
+    @Transactional
+    public void setPrivate(long me, boolean isPrivate) {
+        jdbc.update("update users set is_private = :p, updated_at = :now where id = :me",
+                new MapSqlParameterSource("p", isPrivate).addValue("me", me)
+                        .addValue("now", Timestamp.from(Instant.now(clock))));
+        if (!isPrivate) {
+            List<Long> requesters = jdbc.queryForList(
+                    "select follower_id from follows where following_id = :me and status = 'PENDING'",
+                    Map.of("me", me), Long.class);
+            for (Long r : requesters) {
+                accept(me, r);
+            }
+        }
     }
 
     private void adjustCounts(long followerId, long followingId, int delta) {

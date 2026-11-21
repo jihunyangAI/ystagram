@@ -11,7 +11,7 @@ public enum Relationship {
     /** 비공개 계정에 요청을 보내고 승인 대기 → "요청됨" */
     REQUESTED;
 
-    static Relationship of(FollowStatus status) {
+    public static Relationship of(FollowStatus status) {
         if (status == null) return NONE;
         return status == FollowStatus.ACCEPTED ? FOLLOWING : REQUESTED;
     }

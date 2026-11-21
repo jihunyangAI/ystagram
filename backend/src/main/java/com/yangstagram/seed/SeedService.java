@@ -61,7 +61,8 @@ public class SeedService {
     }
 
     public record SeedResult(SeedSize size, long seed, int users, int follows, int posts, int likes,
-                             int comments, long elapsedMillis) {
+                             int comments, int stories, int conversations, int messages, int notifications,
+                             long elapsedMillis) {
     }
 
     enum Persona { INFLUENCER, BUSINESS, REGULAR, LURKER }
@@ -91,7 +92,10 @@ public class SeedService {
         long started = System.currentTimeMillis();
         jdbc.execute("""
                 truncate table comments, likes, post_hashtags, hashtags, post_media, posts, locations,
-                               follows, users restart identity cascade
+                               follows, users, stories, story_views, notifications, conversations,
+                               conversation_members, messages, message_reactions, collections,
+                               collection_posts, saved_posts, reposts, comment_likes, search_history
+                               restart identity cascade
                 """);
 
         Random rnd = new Random(seed);
@@ -105,14 +109,20 @@ public class SeedService {
         List<FakeFollow> follows = buildFollows(users, rnd, now);
         insertFollows(follows);
 
-        SeedPosts.Result content = new SeedPosts(jdbc, rnd, now, seedPhotos.load()).generate(users, follows);
+        var photos = seedPhotos.load();
+        SeedPosts.Result content = new SeedPosts(jdbc, rnd, now, photos).generate(users, follows);
         recomputeCounts();
+        SeedSocial.Result social = new SeedSocial(jdbc, rnd, now,
+                photos.values().stream().flatMap(List::stream).toList()).generate(users, follows);
 
         long elapsed = System.currentTimeMillis() - started;
-        log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, 게시물={}, 좋아요={}, 댓글={}, {}ms",
-                size, seed, users.size(), follows.size(), content.posts(), content.likes(), content.comments(), elapsed);
+        log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, 게시물={}, 좋아요={}, 댓글={}, "
+                        + "스토리={}, 대화방={}, 메시지={}, 알림={}, {}ms",
+                size, seed, users.size(), follows.size(), content.posts(), content.likes(), content.comments(),
+                social.stories(), social.conversations(), social.messages(), social.notifications(), elapsed);
         return new SeedResult(size, seed, users.size(), follows.size(), content.posts(), content.likes(),
-                content.comments(), elapsed);
+                content.comments(), social.stories(), social.conversations(), social.messages(),
+                social.notifications(), elapsed);
     }
 
     // ---------------------------------------------------------------- 사용자
