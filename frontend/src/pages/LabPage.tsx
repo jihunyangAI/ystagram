@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Clock, FlaskConical, RefreshCw, Search } from 'lucide-react'
+import { Clock, RefreshCw, Search } from 'lucide-react'
+import { LabHeader } from '../components/lab/LabNav'
 import { LabUserList } from '../components/lab/LabUserList'
 import { toast } from '../components/Toast'
 import { api } from '../lib/api'
@@ -92,12 +93,7 @@ export function LabPage() {
 
   return (
     <div className="mx-auto w-full max-w-[760px] space-y-8 px-4 py-8">
-      <header>
-        <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <FlaskConical className="text-primary" /> Lab
-        </h1>
-        <p className="mt-1 text-sm text-muted">연구용 도구입니다. 실제 인스타그램에는 없는 화면입니다.</p>
-      </header>
+      <LabHeader />
 
       <section aria-labelledby="lab-status">
         <h2 id="lab-status" className="mb-3 font-semibold">데이터 현황</h2>

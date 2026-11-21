@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { CheckCircle2 } from 'lucide-react'
+import { track, useImpression } from '../../lib/events'
 import { useToggleLike } from '../../lib/posts'
 import type { PostView } from '../../lib/types'
+import { ScoreBadge } from '../ranking/ScoreBadge'
 import { EditPostModal } from './EditPostModal'
 import { CarouselDots, MediaCarousel } from './MediaCarousel'
 import { Caption, CollabInviteBar, CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from './PostParts'
@@ -13,19 +16,40 @@ export function PostCard({ post }: { post: PostView }) {
   const [menu, setMenu] = useState(false)
   const [editing, setEditing] = useState(false)
   const [index, setIndex] = useState(0)
+  const [hidden, setHidden] = useState(false)
+  const ref = useImpression<HTMLElement>(post.shortcode, 'HOME')
+  const suggested = post.ranking?.source === 'SUGGESTED'
+
+  if (hidden) {
+    return (
+      <div className="border-b border-border px-4 py-6 text-center text-sm">
+        <p className="font-semibold">게시물을 숨겼습니다</p>
+        <p className="mt-1 text-muted">이 게시물은 다시 추천되지 않습니다.</p>
+        <Link to="/accounts/algorithm" className="mt-2 inline-block font-semibold text-primary">
+          관심 주제 관리
+        </Link>
+      </div>
+    )
+  }
 
   return (
-    <article className="border-b border-border pb-4 md:pb-5" aria-label={`${post.author.username}님의 게시물`}>
+    <>
+      {post.ranking?.caughtUp && <CaughtUp />}
+      <article ref={ref} className="border-b border-border pb-4 md:pb-5" aria-label={`${post.author.username}님의 게시물`}>
+      {suggested && <p className="px-3 pt-2 text-xs font-semibold text-muted md:px-0">회원님을 위한 추천</p>}
       <PostHeader post={post} onMenu={() => setMenu(true)} />
       <CollabInviteBar post={post} />
-      <MediaCarousel
-        media={post.media}
-        tags={post.tags}
-        className="md:rounded-md md:border md:border-border"
-        onIndexChange={setIndex}
-        // 더블탭은 좋아요만 한다 (이미 눌렀으면 그대로)
-        onDoubleTap={() => !post.likedByMe && like.mutate({ post, like: true })}
-      />
+      <div className="relative">
+        <MediaCarousel
+          media={post.media}
+          tags={post.tags}
+          className="md:rounded-md md:border md:border-border"
+          onIndexChange={setIndex}
+          // 더블탭은 좋아요만 한다 (이미 눌렀으면 그대로)
+          onDoubleTap={() => !post.likedByMe && like.mutate({ post, like: true })}
+        />
+        <ScoreBadge ranking={post.ranking} className="absolute top-2 left-2" />
+      </div>
       <PostActions
         post={post}
         onComment={() => navigate(`/p/${post.shortcode}`)}
@@ -48,8 +72,34 @@ export function PostCard({ post }: { post: PostView }) {
       )}
       {!post.commentsDisabled && <CommentInput shortcode={post.shortcode} className="px-3 md:px-0" />}
 
-      <PostMenu post={post} open={menu} onClose={() => setMenu(false)} onEdit={() => setEditing(true)} />
+      <PostMenu
+        post={post}
+        open={menu}
+        onClose={() => setMenu(false)}
+        onEdit={() => setEditing(true)}
+        onNotInterested={
+          suggested
+            ? () => {
+                track({ type: 'NOT_INTERESTED', shortcode: post.shortcode, surface: 'HOME' })
+                setHidden(true)
+              }
+            : undefined
+        }
+      />
       {editing && <EditPostModal post={post} onClose={() => setEditing(false)} />}
-    </article>
+      </article>
+    </>
+  )
+}
+
+/** 팔로우 게시물을 다 본 뒤 (분석 문서 §5 "모두 확인했습니다") */
+function CaughtUp() {
+  return (
+    <div className="border-b border-border px-4 py-8 text-center">
+      <CheckCircle2 size={56} strokeWidth={1.2} className="mx-auto text-primary" />
+      <p className="mt-3 text-lg font-semibold">모두 확인했습니다</p>
+      <p className="mt-1 text-sm text-muted">최근 3일 동안 새로 올라온 팔로우 게시물을 모두 확인했습니다.</p>
+      <p className="mt-6 text-left text-sm font-semibold">추천 게시물</p>
+    </div>
   )
 }

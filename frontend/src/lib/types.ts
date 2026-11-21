@@ -147,6 +147,8 @@ export interface PostView {
   collaborators: UserSummary[]
   /** 내가 공동 작업 초대를 받았고 아직 답하지 않음 */
   collabInvite: boolean
+  /** 추천 영역(홈·탐색·릴스)에서 이 자리에 온 이유. 최신순 목록에서는 null */
+  ranking: Ranking | null
 }
 
 export interface GridItem {
@@ -157,6 +159,37 @@ export interface GridItem {
   commentCount: number
   type: 'PHOTO' | 'CAROUSEL' | 'REEL'
   viewCount: number
+  ranking: Ranking | null
+}
+
+/** 점수 내역의 한 줄: 기여도 = 부호 × 가중치 × 값 */
+export interface ScorePart {
+  key: string
+  label: string
+  description: string
+  value: number
+  weight: number
+  contribution: number
+}
+
+export type RankSurface = 'FEED' | 'EXPLORE' | 'REELS'
+
+export interface Ranking {
+  surface: RankSurface
+  /** FOLLOWING 팔로우 · SUGGESTED 추천 · REPOST 팔로우하는 사람의 리포스트 */
+  source: 'FOLLOWING' | 'SUGGESTED' | 'REPOST'
+  score: number
+  rank: number
+  parts: ScorePart[]
+  /** 홈 피드에서 팔로우 게시물을 다 본 뒤 처음 나오는 추천 */
+  caughtUp: boolean
+}
+
+/** 순위 목록 한 쪽 (탐색·릴스). since를 다음 쪽 요청에 그대로 보낸다 */
+export interface RankedPage<T> {
+  items: T[]
+  nextPage: number | null
+  since: number
 }
 
 export interface LikeResult {

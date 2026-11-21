@@ -17,6 +17,7 @@ import { UserBadges } from '../UserBadges'
 import { ShareModal } from '../dm/ShareModal'
 import { StoryRingAvatar } from '../story/StoryRingAvatar'
 import { UserListModal } from '../user/UserListModal'
+import { WhyModal } from '../ranking/WhyModal'
 import { RichText } from './RichText'
 import { SaveButton } from './SaveButton'
 
@@ -626,22 +627,54 @@ export function PostMenu({
   open,
   onClose,
   onEdit,
+  onNotInterested,
 }: {
   post: PostView
   open: boolean
   onClose: () => void
   onEdit?: () => void
+  /** 추천 게시물에서 "관심 없음" */
+  onNotInterested?: () => void
 }) {
   const navigate = useNavigate()
   const remove = useDeletePost()
   const unfollow = useToggleFollow()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [why, setWhy] = useState(false)
 
   return (
     <>
       <Modal open={open && !confirmDelete} onClose={onClose} bare title="게시물 옵션">
+        {onNotInterested && (
+          <SheetButton
+            onClick={() => {
+              onClose()
+              onNotInterested()
+            }}
+          >
+            관심 없음
+          </SheetButton>
+        )}
+        {post.ranking && (
+          <SheetButton
+            onClick={() => {
+              onClose()
+              setWhy(true)
+            }}
+          >
+            이 게시물이 표시되는 이유
+          </SheetButton>
+        )}
         {post.mine ? (
           <>
+            <SheetButton
+              onClick={() => {
+                onClose()
+                navigate(`/p/${post.shortcode}/insights`)
+              }}
+            >
+              인사이트 보기
+            </SheetButton>
             <SheetButton danger onClick={() => setConfirmDelete(true)}>
               삭제
             </SheetButton>
@@ -696,6 +729,7 @@ export function PostMenu({
         </SheetButton>
         <SheetButton onClick={onClose}>취소</SheetButton>
       </Modal>
+      {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
       <ConfirmModal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

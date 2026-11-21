@@ -3,20 +3,26 @@ import { Link } from 'react-router'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Clapperboard, Copy, Heart, MessageCircle, Search } from 'lucide-react'
 import clsx from 'clsx'
+import { ScoreBadge } from '../../components/ranking/ScoreBadge'
 import { api } from '../../lib/api'
+import { useImpression } from '../../lib/events'
 import { formatCount } from '../../lib/format'
-import type { GridItem } from '../../lib/types'
+import type { GridItem, RankedPage } from '../../lib/types'
 
 /**
  * 탐색 (분석 문서 §11): 팔로우하지 않는 공개 계정의 게시물·릴스를 점수 순으로.
  * 5칸씩 묶어 그중 하나(릴스 우선)를 세로로 긴 큰 칸으로, 왼쪽·오른쪽을 번갈아 배치한다.
+ * 순서는 Lab 알고리즘 실험실의 "탐색" 가중치를 따른다. since(첫 쪽을 만든 시각)를 다음 쪽에 넘겨 순서가 흔들리지 않게 한다.
  */
 export function ExplorePage() {
   const query = useInfiniteQuery({
     queryKey: ['explore'],
-    queryFn: ({ pageParam }) => api.get<{ items: GridItem[]; nextPage: number | null }>(`/api/explore?page=${pageParam}`),
-    initialPageParam: 0,
-    getNextPageParam: (last) => last.nextPage ?? undefined,
+    queryFn: ({ pageParam }) =>
+      api.get<RankedPage<GridItem>>(
+        `/api/explore?page=${pageParam.page}${pageParam.since ? `&since=${pageParam.since}` : ''}`,
+      ),
+    initialPageParam: { page: 0, since: 0 },
+    getNextPageParam: (last) => (last.nextPage == null ? undefined : { page: last.nextPage, since: last.since }),
   })
   const sentinel = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -80,8 +86,10 @@ export function ExplorePage() {
 
 function Tile({ item, className }: { item: GridItem; className?: string }) {
   const reel = item.type === 'REEL'
+  const ref = useImpression<HTMLAnchorElement>(item.shortcode, 'EXPLORE')
   return (
     <Link
+      ref={ref}
       to={reel ? `/reels/${item.shortcode}` : `/p/${item.shortcode}`}
       className={clsx('group relative block min-h-0 overflow-hidden bg-surface-2', className)}
       aria-label={reel ? '릴스 보기' : '게시물 보기'}
@@ -102,6 +110,7 @@ function Tile({ item, className }: { item: GridItem; className?: string }) {
           <MessageCircle size={20} className="-scale-x-100 fill-white" /> {formatCount(item.commentCount)}
         </span>
       </div>
+      <ScoreBadge ranking={item.ranking} compact className="absolute bottom-1 left-1" />
     </Link>
   )
 }

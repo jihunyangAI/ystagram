@@ -4,7 +4,7 @@ import type { PostView } from '../../lib/types'
 import { Avatar } from '../Avatar'
 import { Modal } from '../Modal'
 import { toast } from '../Toast'
-import { CaptionField, Toggle, countHashtags, MAX_CAPTION, MAX_HASHTAGS } from './CaptionField'
+import { CaptionField, Toggle, countHashtags, MAX_CAPTION, useHashtagLimit } from './CaptionField'
 
 /** 게시 후 수정: 캡션 · 위치 · 좋아요 수 숨기기 · 댓글 기능 끄기 */
 export function EditPostModal({ post, onClose }: { post: PostView; onClose: () => void }) {
@@ -13,7 +13,8 @@ export function EditPostModal({ post, onClose }: { post: PostView; onClose: () =
   const [location, setLocation] = useState(post.location?.name ?? '')
   const [hideLikeCount, setHide] = useState(post.hideLikeCount)
   const [commentsDisabled, setNoComments] = useState(post.commentsDisabled)
-  const invalid = caption.length > MAX_CAPTION || countHashtags(caption) > MAX_HASHTAGS
+  const hashtagLimit = useHashtagLimit()
+  const invalid = caption.length > MAX_CAPTION || countHashtags(caption) > hashtagLimit
 
   const save = () =>
     update.mutate(

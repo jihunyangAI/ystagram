@@ -1,4 +1,4 @@
-import { Clapperboard, Compass, Heart, House, Search, Send } from 'lucide-react'
+import { Clapperboard, Compass, Heart, House, Search, Send, SquarePlus } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export interface NavItem {
@@ -23,4 +23,12 @@ export const BOTTOM_ITEMS: NavItem[] = [
   { to: '/reels', label: '릴스', icon: Clapperboard },
   { to: '/direct/inbox', label: '메시지', icon: Send },
   { to: '/explore', label: '검색', icon: Search },
+]
+
+/** 예전 하단 탭 (기능 플래그 navLayout=CLASSIC): 홈 / 검색 / 만들기 / 릴스 / 프로필 */
+export const CLASSIC_BOTTOM_ITEMS: NavItem[] = [
+  { to: '/', label: '홈', icon: House },
+  { to: '/explore', label: '검색', icon: Search },
+  { to: '/create', label: '만들기', icon: SquarePlus },
+  { to: '/reels', label: '릴스', icon: Clapperboard },
 ]

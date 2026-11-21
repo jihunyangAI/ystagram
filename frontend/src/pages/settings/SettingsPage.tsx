@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import {
   Archive,
   Ban,
+  BarChart3,
   Bookmark,
   ChevronRight,
   CircleUserRound,
@@ -12,6 +13,7 @@ import {
   LogOut,
   MessageSquareOff,
   Moon,
+  Sparkles,
   Star,
   UserRoundCheck,
 } from 'lucide-react'
@@ -49,6 +51,7 @@ export function SettingsPage() {
       items: [
         { to: `/${me.user.username}/saved/all`, label: '저장됨', icon: Bookmark },
         { to: '/archive/stories', label: '보관함', icon: Archive, hint: '지난 스토리' },
+        { to: '/insights', label: '인사이트', icon: BarChart3, hint: '도달·노출·참여·팔로워 변화' },
       ],
     },
     {
@@ -67,7 +70,10 @@ export function SettingsPage() {
     },
     {
       title: '표시되는 내용',
-      items: [{ to: '/accounts/favorites', label: '즐겨찾기', icon: UserRoundCheck, hint: '홈의 "즐겨찾기"에 이 사람들의 글만' }],
+      items: [
+        { to: '/accounts/algorithm', label: '회원님의 알고리즘', icon: Sparkles, hint: '추천에 쓰이는 관심 주제 보기·추가·빼기' },
+        { to: '/accounts/favorites', label: '즐겨찾기', icon: UserRoundCheck, hint: '홈의 "즐겨찾기"에 이 사람들의 글만' },
+      ],
     },
   ]
 

@@ -12,19 +12,25 @@ import { useMe } from '../lib/auth'
 import { useFeed } from '../lib/posts'
 import type { SuggestedUser } from '../lib/types'
 
-/** 홈: 팔로우한 사람들의 게시물(시간순) + 오른쪽 추천 계정 */
+type FeedMode = 'home' | 'following' | 'favorites'
+const MODES: readonly FeedMode[] = ['home', 'following', 'favorites']
+
+/**
+ * 홈: 추천 순서 피드(기본, 추천 게시물 섞임) / 팔로잉(최신순) / 즐겨찾기 + 오른쪽 추천 계정
+ */
 export function HomePage() {
   const { data: me } = useMe()
-  // 홈 보기: 팔로잉(기본) / 즐겨찾기. 고른 것은 이 브라우저에 기억한다
-  const [mode, setMode] = useState<'following' | 'favorites'>(() => {
+  // 고른 보기는 이 브라우저에 기억한다
+  const [mode, setMode] = useState<FeedMode>(() => {
     try {
-      return localStorage.getItem('yangstagram:feed') === 'favorites' ? 'favorites' : 'following'
+      const saved = localStorage.getItem('yangstagram:feed') as FeedMode | null
+      return saved && MODES.includes(saved) ? saved : 'home'
     } catch {
-      return 'following'
+      return 'home'
     }
   })
   const feed = useFeed(mode)
-  const chooseMode = (m: 'following' | 'favorites') => {
+  const chooseMode = (m: FeedMode) => {
     setMode(m)
     try {
       localStorage.setItem('yangstagram:feed', m)
@@ -56,7 +62,7 @@ export function HomePage() {
       <div className="w-full max-w-[470px]">
         <StoryTray />
         <div role="tablist" aria-label="홈 보기" className="flex gap-2 px-3 py-2 md:px-0">
-          {([['following', '팔로잉'], ['favorites', '즐겨찾기 ★']] as const).map(([m, label]) => (
+          {([['home', '홈'], ['following', '팔로잉 (최신순)'], ['favorites', '즐겨찾기 ★']] as const).map(([m, label]) => (
             <button
               key={m}
               role="tab"

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, ImagePlus, MapPin, Plus, X, ZoomIn } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
-import { CaptionField, MAX_CAPTION, MAX_HASHTAGS, Toggle, countHashtags } from '../../components/post/CaptionField'
+import { CaptionField, MAX_CAPTION, Toggle, countHashtags, useHashtagLimit } from '../../components/post/CaptionField'
 import { toast } from '../../components/Toast'
 import { api } from '../../lib/api'
 import { useMe } from '../../lib/auth'
@@ -150,7 +150,8 @@ export function CreatePostPage() {
     if (next.length === 0) setStep('select')
   }
 
-  const tooManyTags = countHashtags(caption) > MAX_HASHTAGS
+  const hashtagLimit = useHashtagLimit()
+  const tooManyTags = countHashtags(caption) > hashtagLimit
   const tooLong = caption.length > MAX_CAPTION
 
   const share = async () => {

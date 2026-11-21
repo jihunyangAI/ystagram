@@ -5,7 +5,8 @@ import type { Me } from '../../lib/types'
 import { Avatar } from '../Avatar'
 import { Logo } from '../Logo'
 import { DmBadge, NotificationDot } from './Badges'
-import { BOTTOM_ITEMS } from './nav'
+import { useFlagValues } from '../../lib/flags'
+import { BOTTOM_ITEMS, CLASSIC_BOTTOM_ITEMS } from './nav'
 
 /** 모바일 상단 바: 만들기(+) · 로고 · 알림 (홈 화면에서만 표시) */
 export function MobileTopBar() {
@@ -27,11 +28,12 @@ export function MobileTopBar() {
   )
 }
 
-/** 모바일 하단 탭: 홈 / 릴스 / DM / 검색 / 프로필 */
+/** 모바일 하단 탭: 홈 / 릴스 / DM / 검색 / 프로필 (예전 배치 플래그면 홈 / 검색 / 만들기 / 릴스 / 프로필) */
 export function BottomNav({ me }: { me: Me }) {
+  const items = useFlagValues().navLayout === 'CLASSIC' ? CLASSIC_BOTTOM_ITEMS : BOTTOM_ITEMS
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex h-[50px] items-center justify-around border-t border-border bg-bg pb-[env(safe-area-inset-bottom)] md:hidden">
-      {BOTTOM_ITEMS.map(({ to, label, icon: Icon }) => (
+      {items.map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} end aria-label={label} className="flex flex-1 justify-center py-2">
           {({ isActive }) => (
             <span className="relative">

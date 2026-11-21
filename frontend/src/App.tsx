@@ -4,6 +4,12 @@ import { LabSwitcher } from './components/lab/LabSwitcher'
 import { Toaster } from './components/Toast'
 import { HomePage } from './pages/HomePage'
 import { LabPage } from './pages/LabPage'
+import { LabAlgorithmPage } from './pages/lab/LabAlgorithmPage'
+import { LabEventsPage } from './pages/lab/LabEventsPage'
+import { LabFlagsPage } from './pages/lab/LabFlagsPage'
+import { LabSimulatorPage } from './pages/lab/LabSimulatorPage'
+import { InsightsPage, PostInsightsPage } from './pages/insights/InsightsPage'
+import { AlgorithmPage } from './pages/settings/AlgorithmPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SavedCollectionPage } from './pages/SavedCollectionPage'
@@ -60,6 +66,13 @@ export default function App() {
           <Route path="accounts/close-friends" element={<PickListPage kind="close-friends" />} />
           <Route path="accounts/favorites" element={<PickListPage kind="favorites" />} />
           <Route path="lab" element={<LabPage />} />
+          <Route path="lab/algorithm" element={<LabAlgorithmPage />} />
+          <Route path="lab/events" element={<LabEventsPage />} />
+          <Route path="lab/simulator" element={<LabSimulatorPage />} />
+          <Route path="lab/flags" element={<LabFlagsPage />} />
+          <Route path="insights" element={<InsightsPage />} />
+          <Route path="p/:shortcode/insights" element={<PostInsightsPage />} />
+          <Route path="accounts/algorithm" element={<AlgorithmPage />} />
           <Route path=":username" element={<ProfilePage />} />
           <Route path=":username/saved/:id" element={<SavedCollectionPage />} />
           <Route path="*" element={<NotFoundPage />} />

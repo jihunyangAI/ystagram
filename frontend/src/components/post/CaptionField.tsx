@@ -1,7 +1,12 @@
 import clsx from 'clsx'
+import { useFlagValues } from '../../lib/flags'
 
 export const MAX_CAPTION = 2200
-export const MAX_HASHTAGS = 5
+
+/** 게시물당 해시태그 최대 개수 (기능 플래그, 기본 5) */
+export function useHashtagLimit(): number {
+  return useFlagValues().hashtagLimit
+}
 
 /** 백엔드 Hashtags.extract와 같은 규칙: 대소문자 무시, 중복 제외 */
 export function countHashtags(text: string): number {
@@ -10,10 +15,11 @@ export function countHashtags(text: string): number {
   return tags.size
 }
 
-/** 캡션 입력: 글자 수(2,200)와 해시태그 수(5개)를 실시간으로 보여 주고 넘으면 경고 */
+/** 캡션 입력: 글자 수(2,200)와 해시태그 수(기본 5개)를 실시간으로 보여 주고 넘으면 경고 */
 export function CaptionField({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+  const limit = useHashtagLimit()
   const tags = countHashtags(value)
-  const tooManyTags = tags > MAX_HASHTAGS
+  const tooManyTags = tags > limit
   const tooLong = value.length > MAX_CAPTION
   return (
     <div>
@@ -30,8 +36,8 @@ export function CaptionField({ value, onChange, autoFocus }: { value: string; on
       />
       <div id="caption-help" className="flex items-center justify-between text-xs">
         <span className={clsx(tooManyTags ? 'font-semibold text-danger' : 'text-muted')}>
-          해시태그 {tags}/{MAX_HASHTAGS}
-          {tooManyTags && ' · 해시태그는 5개까지 쓸 수 있습니다'}
+          해시태그 {tags}/{limit}
+          {tooManyTags && ` · 해시태그는 ${limit}개까지 쓸 수 있습니다`}
         </span>
         <span className={clsx(tooLong ? 'font-semibold text-danger' : 'text-muted')}>
           {value.length.toLocaleString('ko-KR')}/{MAX_CAPTION.toLocaleString('ko-KR')}

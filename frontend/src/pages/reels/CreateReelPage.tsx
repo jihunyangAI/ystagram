@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, Film, TriangleAlert } from 'lucide-react'
 import { toast } from '../../components/Toast'
-import { CaptionField, MAX_CAPTION, MAX_HASHTAGS, Toggle, countHashtags } from '../../components/post/CaptionField'
+import { CaptionField, MAX_CAPTION, Toggle, countHashtags, useHashtagLimit } from '../../components/post/CaptionField'
 import { api } from '../../lib/api'
 import type { PostView } from '../../lib/types'
 
@@ -69,7 +69,8 @@ export function CreateReelPage() {
   }
 
   const tooLong = duration > MAX_MS
-  const captionInvalid = caption.length > MAX_CAPTION || countHashtags(caption) > MAX_HASHTAGS
+  const hashtagLimit = useHashtagLimit()
+  const captionInvalid = caption.length > MAX_CAPTION || countHashtags(caption) > hashtagLimit
 
   const share = async () => {
     if (!file || sharing || tooLong || captionInvalid) return

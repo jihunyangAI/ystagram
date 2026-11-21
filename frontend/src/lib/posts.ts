@@ -6,11 +6,11 @@ import type { CommentView, LikeResult, PostView, Relationship, Slice } from './t
 // ------------------------------------------------------------ 조회
 
 /** mode: following(팔로잉·리포스트) / favorites(즐겨찾기한 사람만) */
-export function useFeed(mode: 'following' | 'favorites' = 'following') {
+export function useFeed(mode: 'home' | 'following' | 'favorites' = 'home') {
   return useInfiniteQuery({
     queryKey: ['feed', mode],
     queryFn: ({ pageParam }) =>
-      api.get<Slice<PostView>>(`/api/feed?mode=${mode}${pageParam ? `&cursor=${pageParam}` : ''}`),
+      api.get<Slice<PostView>>(`/api/feed?mode=${mode}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`),
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   })

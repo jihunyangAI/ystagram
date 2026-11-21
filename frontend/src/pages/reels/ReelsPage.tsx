@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { Clapperboard, Heart, MessageCircle, Music2, Pause, Plus, Repeat2, Send, Volume2, VolumeX } from 'lucide-react'
+import { Clapperboard, Heart, MessageCircle, MoreHorizontal, Music2, Pause, Plus, Repeat2, Send, Volume2, VolumeX } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
+import { Modal, SheetButton } from '../../components/Modal'
 import { toast } from '../../components/Toast'
+import { ScoreBadge } from '../../components/ranking/ScoreBadge'
+import { WhyModal } from '../../components/ranking/WhyModal'
 import { ShareModal } from '../../components/dm/ShareModal'
 import { RichText } from '../../components/post/RichText'
 import { SaveButton } from '../../components/post/SaveButton'
 import { FollowButton } from '../../components/user/FollowButton'
 import { api } from '../../lib/api'
+import { track } from '../../lib/events'
 import { formatCount } from '../../lib/format'
 import { useToggleLike } from '../../lib/posts'
 import { useToggleRepost } from '../../lib/social'
-import type { PostView } from '../../lib/types'
+import type { PostView, RankedPage } from '../../lib/types'
 
 type Tab = 'recommended' | 'friends'
 
@@ -36,9 +40,12 @@ export function ReelsPage() {
   })
   const feed = useInfiniteQuery({
     queryKey: ['feed', 'reels', tab],
-    queryFn: ({ pageParam }) => api.get<{ items: PostView[]; nextPage: number | null }>(`/api/reels?tab=${tab}&page=${pageParam}`),
-    initialPageParam: 0,
-    getNextPageParam: (last) => last.nextPage ?? undefined,
+    queryFn: ({ pageParam }) =>
+      api.get<RankedPage<PostView>>(
+        `/api/reels?tab=${tab}&page=${pageParam.page}${pageParam.since ? `&since=${pageParam.since}` : ''}`,
+      ),
+    initialPageParam: { page: 0, since: 0 },
+    getNextPageParam: (last) => (last.nextPage == null ? undefined : { page: last.nextPage, since: last.since }),
   })
 
   const list: PostView[] = []
@@ -124,34 +131,63 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
   const [heart, setHeart] = useState(0)
   const [sharing, setSharing] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [more, setMore] = useState(false)
+  const [why, setWhy] = useState(false)
+  const [hidden, setHidden] = useState(false)
   const lastTap = useRef(0)
   const tapTimer = useRef<number | undefined>(undefined)
   const media = post.media[0]
 
-  // 화면 가운데에 오면 재생 + 조회 1회 기록, 벗어나면 멈춤
+  // 화면 가운데에 오면 재생 + 조회 1회 기록, 벗어나면 멈춤.
+  // 이벤트: 들어올 때 노출, 나갈 때 시청 시간(2초 미만이면 건너뛰기도)
   useEffect(() => {
     const el = box.current
     const v = video.current
     if (!el || !v) return
+    let enteredAt: number | null = null
+    const leave = () => {
+      if (enteredAt == null) return
+      const watched = Math.round(performance.now() - enteredAt)
+      enteredAt = null
+      track({ type: 'VIEW_TIME', shortcode: post.shortcode, surface: 'REELS', valueMs: watched })
+      if (watched < 2000) track({ type: 'SKIP', shortcode: post.shortcode, surface: 'REELS' })
+    }
     const io = new IntersectionObserver(
       ([e]) => {
         if (e.intersectionRatio > 0.7) {
           v.currentTime = 0
           void v.play().catch(() => undefined)
           setPaused(false)
+          if (enteredAt == null) {
+            enteredAt = performance.now()
+            track({ type: 'IMPRESSION', shortcode: post.shortcode, surface: 'REELS' })
+          }
           if (!counted.has(post.shortcode)) {
             counted.add(post.shortcode)
             void api.post(`/api/posts/${post.shortcode}/view`).catch(() => undefined)
           }
         } else {
           v.pause()
+          leave()
         }
       },
       { threshold: [0, 0.7, 1] },
     )
     io.observe(el)
-    return () => io.disconnect()
+    return () => {
+      io.disconnect()
+      leave()
+    }
   }, [post.shortcode])
+
+  if (hidden) {
+    return (
+      <div className="flex h-full snap-start snap-always flex-col items-center justify-center gap-2 text-center text-sm text-white/80 md:text-muted">
+        <p className="font-semibold">릴스를 숨겼습니다</p>
+        <p>이 릴스는 다시 추천되지 않습니다.</p>
+      </div>
+    )
+  }
 
   // 한 번 탭 = 멈춤/재생, 두 번 탭 = 좋아요
   const onTap = () => {
@@ -212,6 +248,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
           >
             {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </button>
+          <ScoreBadge ranking={post.ranking} className="absolute top-12 left-3 md:top-3" />
 
           {/* 아래: 작성자·캡션 */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-4 pr-16 text-white md:pr-4">
@@ -254,6 +291,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
               )
             }
             onShare={() => setSharing(true)}
+            onMore={() => setMore(true)}
           />
         </div>
         <ActionColumn
@@ -268,9 +306,53 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
             )
           }
           onShare={() => setSharing(true)}
+          onMore={() => setMore(true)}
         />
       </div>
       <ShareModal shortcode={post.shortcode} open={sharing} onClose={() => setSharing(false)} />
+      <Modal open={more} onClose={() => setMore(false)} bare title="릴스 옵션">
+        {post.ranking?.source === 'SUGGESTED' && (
+          <SheetButton
+            onClick={() => {
+              setMore(false)
+              track({ type: 'NOT_INTERESTED', shortcode: post.shortcode, surface: 'REELS' })
+              setHidden(true)
+            }}
+          >
+            관심 없음
+          </SheetButton>
+        )}
+        {post.ranking && (
+          <SheetButton
+            onClick={() => {
+              setMore(false)
+              setWhy(true)
+            }}
+          >
+            이 릴스가 표시되는 이유
+          </SheetButton>
+        )}
+        {post.mine && (
+          <SheetButton
+            onClick={() => {
+              setMore(false)
+              navigate(`/p/${post.shortcode}/insights`)
+            }}
+          >
+            인사이트 보기
+          </SheetButton>
+        )}
+        <SheetButton
+          onClick={() => {
+            setMore(false)
+            navigate(`/p/${post.shortcode}`)
+          }}
+        >
+          게시물로 이동
+        </SheetButton>
+        <SheetButton onClick={() => setMore(false)}>취소</SheetButton>
+      </Modal>
+      {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
     </div>
   )
 }
@@ -282,6 +364,7 @@ function ActionColumn({
   onComment,
   onRepost,
   onShare,
+  onMore,
 }: {
   post: PostView
   className?: string
@@ -289,6 +372,7 @@ function ActionColumn({
   onComment: () => void
   onRepost: () => void
   onShare: () => void
+  onMore: () => void
 }) {
   const canRepost = !post.mine && !post.author.isPrivate
   return (
@@ -313,6 +397,9 @@ function ActionColumn({
         <Send size={26} />
       </button>
       <SaveButton post={post} />
+      <button aria-label="옵션 더 보기" onClick={onMore}>
+        <MoreHorizontal size={24} />
+      </button>
       <span className="text-[11px] font-normal opacity-80">조회 {formatCount(post.viewCount)}</span>
     </div>
   )

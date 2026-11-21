@@ -40,8 +40,12 @@ export function LabSwitcher() {
       <button
         onClick={() => setOpen(true)}
         className={`fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white shadow-lg hover:bg-primary-hover ${
-          // DM·스토리 화면에서는 입력창을 가리지 않도록 위로
-          pathname.startsWith('/direct') || pathname.startsWith('/stories') || pathname.startsWith('/reels') ? 'top-24 md:top-12' : 'bottom-20 md:bottom-6'
+          // DM·스토리·릴스 화면에서는 입력창을 가리지 않도록 위로, Lab은 데스크톱에서만 위로(결과 표를 가리지 않게)
+          ['/direct', '/stories', '/reels'].some((p) => pathname.startsWith(p))
+            ? 'top-24 md:top-12'
+            : pathname.startsWith('/lab')
+              ? 'bottom-20 md:top-12 md:bottom-auto'
+              : 'bottom-20 md:bottom-6'
         }`}
         aria-label="Lab: 계정 전환"
         title="Lab: 계정 전환"

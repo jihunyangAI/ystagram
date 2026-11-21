@@ -15,6 +15,7 @@ import { FollowButton } from '../components/user/FollowButton'
 import { UserListModal } from '../components/user/UserListModal'
 import { api, ApiError } from '../lib/api'
 import { openConversation } from '../lib/dm'
+import { track } from '../lib/events'
 import { formatCount } from '../lib/format'
 import { useNotificationUnread, useSavedOverview } from '../lib/social'
 import type { CollectionView, Profile } from '../lib/types'
@@ -53,6 +54,11 @@ export function ProfilePage() {
     }
   }, [profile])
   useEffect(() => setTab('posts'), [username])
+  // 다른 사람 프로필 방문은 관계 친밀도·인사이트에 쓰인다
+  const visitedId = profile && !profile.me ? profile.user.username : null
+  useEffect(() => {
+    if (visitedId) track({ type: 'PROFILE_VISIT', username: visitedId })
+  }, [visitedId])
 
   if (isLoading) return <div className="p-10 text-center text-sm text-muted">불러오는 중…</div>
   if (error instanceof ApiError && error.status === 404) return <NotFoundPage />
