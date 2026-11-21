@@ -55,10 +55,23 @@ public class FollowService {
 
     /** 이 사람의 게시물·팔로워 목록을 볼 수 있는가 */
     public boolean canViewContent(long viewerId, long authorId, boolean authorPrivate) {
-        return viewerId == authorId || !authorPrivate || status(viewerId, authorId) == FollowStatus.ACCEPTED;
+        if (viewerId == authorId) return true;
+        if (blocked(viewerId, authorId)) return false;
+        return !authorPrivate || status(viewerId, authorId) == FollowStatus.ACCEPTED;
+    }
+
+    /** 둘 사이에 차단이 있는가 (어느 쪽이든) */
+    public boolean blocked(long a, long b) {
+        Integer n = jdbc.queryForObject("""
+                select count(*) from blocks where (blocker_id = :a and blocked_id = :b) or (blocker_id = :b and blocked_id = :a)
+                """, Map.of("a", a, "b", b), Integer.class);
+        return n != null && n > 0;
     }
 
     public void requireCanView(long viewerId, long authorId, boolean authorPrivate) {
+        if (viewerId != authorId && blocked(viewerId, authorId)) {
+            throw ApiException.notFound("게시물을 볼 수 없습니다.");
+        }
         if (!canViewContent(viewerId, authorId, authorPrivate)) {
             throw ApiException.forbidden("PRIVATE_ACCOUNT", "비공개 계정입니다. 팔로우하면 사진과 동영상을 볼 수 있습니다.");
         }
@@ -84,6 +97,9 @@ public class FollowService {
     public Relationship follow(long viewerId, long targetId, boolean targetPrivate) {
         if (viewerId == targetId) {
             throw ApiException.badRequest("CANNOT_FOLLOW_SELF", "자기 자신은 팔로우할 수 없습니다.");
+        }
+        if (blocked(viewerId, targetId)) {
+            throw ApiException.forbidden("BLOCKED", "이 계정을 팔로우할 수 없습니다. 차단을 해제한 뒤 다시 시도하세요.");
         }
         FollowStatus status = targetPrivate ? FollowStatus.PENDING : FollowStatus.ACCEPTED;
         int inserted = jdbc.update("""
@@ -227,6 +243,8 @@ public class FollowService {
                                             where follower_id = :me and status = 'ACCEPTED')
                 where u.id <> :me and u.deleted_at is null
                   and not exists (select 1 from follows f where f.follower_id = :me and f.following_id = u.id)
+                  and not exists (select 1 from blocks b where (b.blocker_id = :me and b.blocked_id = u.id)
+                                                         or (b.blocker_id = u.id and b.blocked_id = :me))
                 group by u.id
                 order by follows_me desc, mutual desc, u.followers_count desc, u.id
                 limit :limit

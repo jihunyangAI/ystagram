@@ -67,6 +67,12 @@ public class NotificationService {
     public void notify(long recipient, long actor, NotificationType type, Long postId, Long commentId,
                        Long storyId, String body) {
         if (recipient == actor) return;
+        Integer excluded = jdbc.queryForObject("""
+                select count(*) from blocks where (blocker_id = :a and blocked_id = :b) or (blocker_id = :b and blocked_id = :a)
+                """, Map.of("a", recipient, "b", actor), Integer.class);
+        Integer muted = jdbc.queryForObject("select count(*) from mutes where user_id = :a and muted_id = :b",
+                Map.of("a", recipient, "b", actor), Integer.class);
+        if ((excluded != null && excluded > 0) || (muted != null && muted > 0)) return;
         String text = body == null ? null : body.length() > 200 ? body.substring(0, 199) + "…" : body;
         jdbc.update("""
                 insert into notifications (user_id, actor_id, type, post_id, comment_id, story_id, body, created_at)

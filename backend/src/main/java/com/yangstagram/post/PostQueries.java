@@ -11,6 +11,8 @@ import com.yangstagram.post.dto.PostDtos.LocationView;
 import com.yangstagram.post.dto.PostDtos.MediaView;
 import com.yangstagram.post.dto.PostDtos.PostView;
 import com.yangstagram.post.dto.PostDtos.Repost;
+import com.yangstagram.post.dto.PostDtos.TagView;
+import com.yangstagram.relation.RelationSql;
 import com.yangstagram.story.StoryRings;
 import com.yangstagram.story.StoryRings.Ring;
 import com.yangstagram.user.dto.UserRows;
@@ -49,7 +51,7 @@ public class PostQueries {
             (a.id = :me or not a.is_private or exists (
              select 1 from follows vf where vf.follower_id = :me and vf.following_id = a.id
              and vf.status = 'ACCEPTED'))
-            """;
+            and """ + RelationSql.notBlocked("a.id");
 
     private final NamedParameterJdbcTemplate jdbc;
     private final FollowService followService;
@@ -67,12 +69,12 @@ public class PostQueries {
     /** 권한 판정·수정에 필요한 게시물 기본 정보 */
     public record PostRow(long id, String shortcode, UserSummary author, String caption, String location,
                           int likeCount, int commentCount, boolean hideLikeCount, boolean commentsDisabled,
-                          Instant createdAt, int repostCount) {
+                          Instant createdAt, int repostCount, String type, int viewCount) {
     }
 
     private static final String ROW_SELECT = """
             select p.id, p.shortcode, p.caption, p.like_count, p.comment_count, p.hide_like_count,
-                   p.comments_disabled, p.created_at, p.repost_count,
+                   p.comments_disabled, p.created_at, p.repost_count, p.type, p.view_count,
                    l.id as location_id, l.name as location_name, %s
             from posts p
             join users a on a.id = p.author_id
@@ -84,7 +86,7 @@ public class PostQueries {
                 rs.getString("caption"), rs.getString("location_name"),
                 rs.getInt("like_count"), rs.getInt("comment_count"), rs.getBoolean("hide_like_count"),
                 rs.getBoolean("comments_disabled"), rs.getTimestamp("created_at").toInstant(),
-                rs.getInt("repost_count"));
+                rs.getInt("repost_count"), rs.getString("type"), rs.getInt("view_count"));
     }
 
     public Optional<PostRow> findByShortcode(String shortcode) {
@@ -102,7 +104,15 @@ public class PostQueries {
      * 같은 게시물은 한 번만 (가장 최근 리포스트 기준). 정렬 기준은 올린 시각 또는 리포스트한 시각.
      */
     public Slice<PostView> feed(long viewerId, Cursor cursor, int limit) {
-        MapSqlParameterSource p = new MapSqlParameterSource("me", viewerId).addValue("limit", limit + 1);
+        return feed(viewerId, cursor, limit, false);
+    }
+
+    /**
+     * @param favoritesOnly 홈의 "즐겨찾기" 보기: 즐겨찾기한 사람의 글만 (리포스트·내 글 제외)
+     */
+    public Slice<PostView> feed(long viewerId, Cursor cursor, int limit, boolean favoritesOnly) {
+        MapSqlParameterSource p = new MapSqlParameterSource("me", viewerId).addValue("limit", limit + 1)
+                .addValue("fav", favoritesOnly);
         String after = "";
         if (cursor != null) {
             p.addValue("cts", Timestamp.from(cursor.createdAt())).addValue("cid", cursor.id());
@@ -110,27 +120,33 @@ public class PostQueries {
         }
         List<FeedRow> rows = jdbc.query("""
                 with followees as (
-                  select following_id as id from follows where follower_id = :me and status = 'ACCEPTED'
+                  select following_id as id from follows
+                  where follower_id = :me and status = 'ACCEPTED' and (not :fav or is_favorite)
                 ), items as (
                   select p.id as post_id, p.created_at as ts, null::bigint as reposter
                   from posts p join users a on a.id = p.author_id
                   where p.deleted_at is null and a.deleted_at is null
-                    and (p.author_id = :me or p.author_id in (select id from followees))
+                    and ((p.author_id = :me and not :fav) or p.author_id in (select id from followees)
+                         or exists (select 1 from post_collaborators pc where pc.post_id = p.id and pc.status = 'ACCEPTED'
+                                    and (pc.user_id in (select id from followees) or (pc.user_id = :me and not :fav))))
+                    and %s
                   union all
                   select r.post_id, r.created_at, r.user_id
                   from reposts r
                   join posts p on p.id = r.post_id
                   join users a on a.id = p.author_id
-                  where r.user_id in (select id from followees)
+                  where not :fav and r.user_id in (select id from followees)
                     and p.deleted_at is null and a.deleted_at is null and not a.is_private
                     and p.author_id <> :me and p.author_id not in (select id from followees)
+                    and %s and %s and %s
                 ), dedup as (
                   select distinct on (post_id) post_id, ts, reposter from items order by post_id, ts desc
                 )
                 select post_id, ts, reposter from dedup %s
                 order by ts desc, post_id desc
                 limit :limit
-                """.formatted(after), p,
+                """.formatted(RelationSql.postsNotMuted("p.author_id"), RelationSql.notBlocked("a.id"),
+                        RelationSql.postsNotMuted("r.user_id"), RelationSql.postsNotMuted("p.author_id"), after), p,
                 (rs, i) -> new FeedRow(rs.getLong(1), rs.getTimestamp(2).toInstant(), (Long) rs.getObject(3)));
 
         Map<Long, Repost> reposts = repostInfo(rows);
@@ -170,8 +186,23 @@ public class PostQueries {
 
     /** 프로필 그리드: 최신순. 권한 확인은 호출하는 쪽에서 한다. */
     public Slice<GridItem> grid(long authorId, long viewerId, Cursor cursor, int limit) {
-        return gridOf("posts p join users a on a.id = p.author_id where p.author_id = :author",
+        return gridOf("posts p join users a on a.id = p.author_id where (p.author_id = :author or exists ("
+                        + "select 1 from post_collaborators pc where pc.post_id = p.id and pc.user_id = :author "
+                        + "and pc.status = 'ACCEPTED'))",
                 "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
+    }
+
+    /** 프로필 "릴스" 탭 */
+    public Slice<GridItem> reelGrid(long authorId, long viewerId, Cursor cursor, int limit) {
+        return gridOf("posts p join users a on a.id = p.author_id where p.author_id = :author and p.type = 'REEL'",
+                "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
+    }
+
+    /** 프로필 "태그됨" 탭: 이 사람이 태그된 게시물 (볼 수 있는 것만) */
+    public Slice<GridItem> taggedGrid(long userId, long viewerId, Cursor cursor, int limit) {
+        return gridOf("post_tags pt join posts p on p.id = pt.post_id join users a on a.id = p.author_id "
+                        + "where pt.user_id = :uid and " + VISIBLE,
+                "p.created_at", new MapSqlParameterSource("uid", userId), viewerId, cursor, limit);
     }
 
     /** 이 사람이 리포스트한 게시물 (리포스트한 순) */
@@ -210,6 +241,7 @@ public class PostQueries {
         p.addValue("me", viewerId).addValue("limit", limit);
         return jdbc.query("""
                 select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
+                       p.type, p.view_count,
                        m.thumb_url, (select count(*) from post_media x where x.post_id = p.id) as media_count
                 from %s and p.deleted_at is null and a.deleted_at is null
                 order by p.like_count desc, p.id desc
@@ -232,7 +264,7 @@ public class PostQueries {
         List<Object[]> keys = new ArrayList<>();
         List<GridItem> items = jdbc.query("""
                 select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
-                       %s as ts, m.thumb_url,
+                       p.type, p.view_count, %s as ts, m.thumb_url,
                        (select count(*) from post_media x where x.post_id = p.id) as media_count
                 from %s and p.deleted_at is null and a.deleted_at is null %s
                 order by %s desc, p.id desc
@@ -255,10 +287,11 @@ public class PostQueries {
                 + fromWhere.substring(at);
     }
 
-    private static GridItem gridItem(java.sql.ResultSet rs, long viewerId) throws java.sql.SQLException {
+    public static GridItem gridItem(java.sql.ResultSet rs, long viewerId) throws java.sql.SQLException {
         boolean hidden = rs.getBoolean("hide_like_count") && rs.getLong("author_id") != viewerId;
         return new GridItem(rs.getString("shortcode"), rs.getString("thumb_url"), rs.getInt("media_count"),
-                hidden ? null : rs.getInt("like_count"), rs.getInt("comment_count"));
+                hidden ? null : rs.getInt("like_count"), rs.getInt("comment_count"), rs.getString("type"),
+                rs.getInt("view_count"));
     }
 
     // ------------------------------------------------------------ 채우기
@@ -286,12 +319,34 @@ public class PostQueries {
 
         Map<Long, List<MediaView>> media = new HashMap<>();
         jdbc.query("""
-                select post_id, url, thumb_url, width, height, alt_text from post_media
+                select post_id, url, thumb_url, width, height, alt_text, media_type, duration_ms from post_media
                 where post_id in (:ids) order by post_id, position
                 """, p, rs -> {
             media.computeIfAbsent(rs.getLong("post_id"), k -> new ArrayList<>()).add(new MediaView(
                     rs.getString("url"), rs.getString("thumb_url"), rs.getInt("width"), rs.getInt("height"),
-                    rs.getString("alt_text")));
+                    rs.getString("alt_text"), rs.getString("media_type"), (Integer) rs.getObject("duration_ms")));
+        });
+
+        Map<Long, List<TagView>> tags = new HashMap<>();
+        jdbc.query("""
+                select pt.post_id, pt.media_index, pt.x, pt.y, %s from post_tags pt join users u on u.id = pt.user_id
+                where pt.post_id in (:ids) and u.deleted_at is null and %s order by u.username
+                """.formatted(UserRows.cols("u"), RelationSql.notBlocked("u.id")), p, rs -> {
+            tags.computeIfAbsent(rs.getLong("post_id"), k -> new ArrayList<>()).add(new TagView(UserRows.read(rs, "u"),
+                    rs.getInt("media_index"), rs.getDouble("x"), rs.getDouble("y")));
+        });
+        Map<Long, List<UserSummary>> collaborators = new HashMap<>();
+        Set<Long> invited = new HashSet<>();
+        jdbc.query("""
+                select pc.post_id, pc.status, %s from post_collaborators pc join users u on u.id = pc.user_id
+                where pc.post_id in (:ids) and u.deleted_at is null order by pc.created_at
+                """.formatted(UserRows.cols("u")), p, rs -> {
+            UserSummary u = UserRows.read(rs, "u");
+            if ("ACCEPTED".equals(rs.getString("status"))) {
+                collaborators.computeIfAbsent(rs.getLong("post_id"), k -> new ArrayList<>()).add(u);
+            } else if (u.id() == viewerId) {
+                invited.add(rs.getLong("post_id"));
+            }
         });
 
         Set<Long> liked = idSet("select post_id from likes where user_id = :me and post_id in (:ids)", p);
@@ -322,9 +377,10 @@ public class PostQueries {
                          row_number() over (partition by c.post_id order by c.created_at desc, c.id desc) as rn
                   from comments c join users u on u.id = c.author_id
                   where c.post_id in (:ids) and c.parent_id is null and u.deleted_at is null
+                    and (not c.restricted or c.author_id = :me) and %s
                 ) t where rn <= 2
                 order by post_id, created_at, id
-                """.formatted(UserRows.cols("u")), p, rs -> {
+                """.formatted(UserRows.cols("u"), RelationSql.notBlocked("u.id")), p, rs -> {
             long postId = rs.getLong("post_id");
             previews.computeIfAbsent(postId, k -> new ArrayList<>()).add(comment(rs, viewerId,
                     postAuthor.getOrDefault(postId, -1L), now, 0));
@@ -343,7 +399,8 @@ public class PostQueries {
                     r.hideLikeCount() && !mine ? null : r.likeCount(), r.commentCount(), liked.contains(id),
                     likedBy.get(id), r.hideLikeCount(), r.commentsDisabled(), r.createdAt(), mine,
                     previews.getOrDefault(id, List.of()), saved.contains(id), reposted.contains(id),
-                    r.repostCount(), reposts.get(id), rings.get(r.author().id())));
+                    r.repostCount(), reposts.get(id), rings.get(r.author().id()), r.type(), r.viewCount(),
+                    tags.getOrDefault(id, List.of()), collaborators.getOrDefault(id, List.of()), invited.contains(id)));
         }
         return result;
     }
@@ -363,7 +420,8 @@ public class PostQueries {
                 mine && Duration.between(createdAt, now).compareTo(EDIT_WINDOW) <= 0,
                 postAuthorId == viewerId && parentId == null,
                 rs.getTimestamp("edited_at") != null, rs.getTimestamp("pinned_at") != null,
-                rs.getInt("like_count"), rs.getBoolean("liked_by_me"), replyCount);
+                rs.getInt("like_count"), rs.getBoolean("liked_by_me"), replyCount,
+                hasColumn(rs, "restricted") && rs.getBoolean("restricted"));
     }
 
     private static boolean hasColumn(java.sql.ResultSet rs, String name) throws java.sql.SQLException {

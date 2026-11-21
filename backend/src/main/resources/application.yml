@@ -24,8 +24,8 @@ spring:
   # 게시물 하나에 사진 최대 20장 (화면에서 1080px로 줄여서 보내므로 한 장 1MB 안팎)
   servlet:
     multipart:
-      max-file-size: 15MB
-      max-request-size: 120MB
+      max-file-size: 200MB   # 릴스 영상 (사진은 화면에서 줄여 보내 1MB 안팎)
+      max-request-size: 220MB
 
 server:
   port: 8080

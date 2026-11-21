@@ -50,6 +50,37 @@ public class MediaStorage {
         return save(source);
     }
 
+    /** 영상 저장 결과 (재생 주소) */
+    public record StoredVideo(String url) {
+    }
+
+    /**
+     * 영상(릴스)은 변환하지 않고 그대로 저장한다 (브라우저가 재생할 수 있는 MP4·WebM만).
+     * 첫 화면 사진(poster)은 화면에서 잘라 saveImage로 따로 보낸다.
+     */
+    public StoredVideo saveVideo(MultipartFile file) {
+        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
+        String ext = switch (type) {
+            case "video/mp4" -> ".mp4";
+            case "video/webm" -> ".webm";
+            case "video/quicktime" -> ".mov";
+            default -> throw ApiException.badRequest("UNSUPPORTED_VIDEO", "MP4 또는 WebM 영상만 올릴 수 있습니다.");
+        };
+        LocalDate today = LocalDate.now();
+        String folder = "%d/%02d".formatted(today.getYear(), today.getMonthValue());
+        String name = UUID.randomUUID().toString().replace("-", "");
+        Path dir = props.uploadDir().resolve(folder);
+        try {
+            Files.createDirectories(dir);
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, dir.resolve(name + ext));
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return new StoredVideo("/media/u/" + folder + "/" + name + ext);
+    }
+
     StoredImage save(BufferedImage source) {
         BufferedImage full = resize(source, MAX_SIDE);
         BufferedImage thumb = resizeToWidth(full, THUMB_WIDTH);

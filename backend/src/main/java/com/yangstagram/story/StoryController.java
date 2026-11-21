@@ -3,7 +3,11 @@ package com.yangstagram.story;
 import com.yangstagram.auth.CurrentUser;
 import com.yangstagram.common.paging.Slice;
 import com.yangstagram.dm.DmDtos.MessageView;
+import com.yangstagram.story.StoryService.CreateStoryRequest;
+import com.yangstagram.story.StoryService.HighlightForm;
+import com.yangstagram.story.StoryService.HighlightView;
 import com.yangstagram.story.StoryService.ReplyRequest;
+import com.yangstagram.story.StoryService.RespondRequest;
 import com.yangstagram.story.StoryService.StoryView;
 import com.yangstagram.story.StoryService.TrayItem;
 import com.yangstagram.story.StoryService.Viewer;
@@ -12,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -46,8 +51,44 @@ public class StoryController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public StoryView create(@RequestPart("file") MultipartFile file,
-                            @RequestPart(value = "altText", required = false) String altText) {
-        return stories.create(CurrentUser.requireId(), file, altText);
+                            @RequestPart(value = "data", required = false) CreateStoryRequest data) {
+        return stories.create(CurrentUser.requireId(), file, data);
+    }
+
+    /** 스티커 응답 (설문·퀴즈·슬라이더·질문) */
+    @PostMapping("/{id}/stickers/{stickerId}")
+    public StoryView respond(@PathVariable long id, @PathVariable String stickerId, @RequestBody RespondRequest req) {
+        return stories.respond(CurrentUser.requireId(), id, stickerId, req.value());
+    }
+
+    // ------------------------------------------------------------ 하이라이트
+
+    @GetMapping("/highlights/{id}")
+    public List<StoryView> highlight(@PathVariable long id) {
+        return stories.highlightStories(CurrentUser.requireId(), id);
+    }
+
+    @PostMapping("/highlights")
+    @ResponseStatus(HttpStatus.CREATED)
+    public HighlightView createHighlight(@RequestBody HighlightForm form) {
+        return stories.createHighlight(CurrentUser.requireId(), form);
+    }
+
+    @PatchMapping("/highlights/{id}")
+    public HighlightView updateHighlight(@PathVariable long id, @RequestBody HighlightForm form) {
+        return stories.updateHighlight(CurrentUser.requireId(), id, form);
+    }
+
+    @DeleteMapping("/highlights/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteHighlight(@PathVariable long id) {
+        stories.deleteHighlight(CurrentUser.requireId(), id);
+    }
+
+    /** 프로필의 하이라이트 목록 */
+    @GetMapping("/of/{username}/highlights")
+    public List<HighlightView> highlightsOf(@PathVariable String username) {
+        return stories.highlights(CurrentUser.requireId(), username);
     }
 
     @DeleteMapping("/{id}")

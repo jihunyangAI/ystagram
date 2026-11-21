@@ -10,6 +10,7 @@ import com.yangstagram.post.PostQueries.PostRow;
 import com.yangstagram.post.dto.PostDtos.CommentView;
 import com.yangstagram.post.dto.PostDtos.CreateCommentRequest;
 import com.yangstagram.post.dto.PostDtos.CreatePostRequest;
+import com.yangstagram.post.dto.PostDtos.CreateReelRequest;
 import com.yangstagram.post.dto.PostDtos.EditCommentRequest;
 import com.yangstagram.post.dto.PostDtos.RepostRequest;
 import com.yangstagram.post.dto.PostDtos.RepostResult;
@@ -62,6 +63,36 @@ public class PostController {
     public PostView create(@RequestPart(value = "files", required = false) List<MultipartFile> files,
                            @RequestPart("data") CreatePostRequest data) {
         return postService.create(CurrentUser.requireId(), files, data);
+    }
+
+    /** 릴스 올리기: video(영상) + poster(첫 화면 JPEG) + data(JSON) */
+    @PostMapping(value = "/reels", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public PostView createReel(@RequestPart("video") MultipartFile video, @RequestPart("poster") MultipartFile poster,
+                               @RequestPart("data") CreateReelRequest data) {
+        return postService.createReel(CurrentUser.requireId(), video, poster, data);
+    }
+
+    @PostMapping("/posts/{shortcode}/view")
+    public Map<String, Integer> view(@PathVariable String shortcode) {
+        return Map.of("viewCount", postService.recordView(shortcode, CurrentUser.requireId()));
+    }
+
+    /** 공동 작업 초대 수락 / 거절 */
+    @PutMapping("/posts/{shortcode}/collab")
+    public PostView acceptCollab(@PathVariable String shortcode) {
+        return postService.answerCollab(shortcode, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/posts/{shortcode}/collab")
+    public PostView declineCollab(@PathVariable String shortcode) {
+        return postService.answerCollab(shortcode, CurrentUser.requireId(), false);
+    }
+
+    /** 내 태그 삭제 */
+    @DeleteMapping("/posts/{shortcode}/tags/me")
+    public PostView removeMyTag(@PathVariable String shortcode) {
+        return postService.removeMyTag(shortcode, CurrentUser.requireId());
     }
 
     @GetMapping("/posts/{shortcode}")
@@ -147,6 +178,12 @@ public class PostController {
     @DeleteMapping("/comments/{id}/pin")
     public CommentView unpin(@PathVariable long id) {
         return commentService.pin(id, CurrentUser.requireId(), false);
+    }
+
+    /** 제한한 사람의 댓글 승인 (게시물 주인) */
+    @PutMapping("/comments/{id}/approve")
+    public CommentView approve(@PathVariable long id) {
+        return commentService.approve(id, CurrentUser.requireId());
     }
 
     @PutMapping("/comments/{id}/like")

@@ -54,3 +54,18 @@ tasks.withType<Test> {
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
 	jvmArgs("-Xms128m", "-Xmx384m", "-XX:+UseSerialGC")
 }
+
+// ------------------------------------------------------------ 도구: 가짜 릴스 영상 만들기
+// 앱 실행에는 필요 없고, seed-media/reels/ 를 한 번 만들 때만 쓴다 (gradlew reelClips)
+val tools: SourceSet = sourceSets.create("tools")
+dependencies {
+	"toolsImplementation"("org.jcodec:jcodec-javase:0.2.5")
+}
+tasks.register<JavaExec>("reelClips") {
+	group = "yangstagram"
+	description = "시드 사진으로 가짜 릴스 영상(MP4)을 만든다"
+	classpath = tools.runtimeClasspath
+	mainClass = "com.yangstagram.tools.ReelClipGenerator"
+	maxHeapSize = "256m"
+	workingDir = projectDir
+}

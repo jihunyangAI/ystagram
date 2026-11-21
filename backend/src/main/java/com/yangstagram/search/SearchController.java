@@ -106,6 +106,7 @@ public class SearchController {
                                and f.status = 'ACCEPTED') as follows_me
                 from users u
                 where u.deleted_at is null
+                  and not exists (select 1 from blocks b where b.blocker_id = u.id and b.blocked_id = :me)
                   and (u.username like :prefix escape '\\' or lower(u.full_name) like :contains escape '\\'
                        or u.username like :contains escape '\\')
                 order by (u.username = :term) desc,

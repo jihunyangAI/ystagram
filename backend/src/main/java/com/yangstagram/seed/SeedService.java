@@ -20,9 +20,11 @@ import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.datafaker.Faker;
+import com.yangstagram.media.MediaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,9 +52,13 @@ public class SeedService {
     private final LabClock clock;
     private final SeedProperties properties;
     private final SeedPhotos seedPhotos;
+    private final MediaProperties media;
+    private final JsonMapper json;
 
     public SeedService(JdbcTemplate jdbc, PasswordEncoder passwordEncoder, LabClock clock,
-                       SeedProperties properties, SeedPhotos seedPhotos) {
+                       SeedProperties properties, SeedPhotos seedPhotos, MediaProperties media, JsonMapper json) {
+        this.media = media;
+        this.json = json;
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
@@ -61,7 +67,7 @@ public class SeedService {
     }
 
     public record SeedResult(SeedSize size, long seed, int users, int follows, int posts, int likes,
-                             int comments, int stories, int conversations, int messages, int notifications,
+                             int comments, int reels, int stories, int conversations, int messages, int notifications,
                              long elapsedMillis) {
     }
 
@@ -94,7 +100,9 @@ public class SeedService {
                 truncate table comments, likes, post_hashtags, hashtags, post_media, posts, locations,
                                follows, users, stories, story_views, notifications, conversations,
                                conversation_members, messages, message_reactions, collections,
-                               collection_posts, saved_posts, reposts, comment_likes, search_history
+                               collection_posts, saved_posts, reposts, comment_likes, search_history,
+                               blocks, restricts, mutes, close_friends, story_sticker_responses, highlights,
+                               highlight_items, post_tags, post_collaborators, post_views
                                restart identity cascade
                 """);
 
@@ -111,17 +119,19 @@ public class SeedService {
 
         var photos = seedPhotos.load();
         SeedPosts.Result content = new SeedPosts(jdbc, rnd, now, photos).generate(users, follows);
+        int reels = new SeedReels(jdbc, rnd, now, media.reels(), json).generate(users, follows);
         recomputeCounts();
         SeedSocial.Result social = new SeedSocial(jdbc, rnd, now,
                 photos.values().stream().flatMap(List::stream).toList()).generate(users, follows);
+        new SeedExtras(jdbc, rnd, now, json).generate(users, follows);
 
         long elapsed = System.currentTimeMillis() - started;
         log.info("가짜 데이터 생성 완료: 규모={}, 시드={}, 사용자={}, 팔로우={}, 게시물={}, 좋아요={}, 댓글={}, "
-                        + "스토리={}, 대화방={}, 메시지={}, 알림={}, {}ms",
-                size, seed, users.size(), follows.size(), content.posts(), content.likes(), content.comments(),
+                        + "릴스={}, 스토리={}, 대화방={}, 메시지={}, 알림={}, {}ms",
+                size, seed, users.size(), follows.size(), content.posts(), content.likes(), content.comments(), reels,
                 social.stories(), social.conversations(), social.messages(), social.notifications(), elapsed);
         return new SeedResult(size, seed, users.size(), follows.size(), content.posts(), content.likes(),
-                content.comments(), social.stories(), social.conversations(), social.messages(),
+                content.comments(), reels, social.stories(), social.conversations(), social.messages(),
                 social.notifications(), elapsed);
     }
 

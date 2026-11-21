@@ -11,5 +11,7 @@ public enum NotificationType {
     FOLLOW_REQUEST,
     FOLLOW_ACCEPTED,
     REPOST,
-    STORY_LIKE
+    STORY_LIKE,
+    TAG,
+    COLLAB_INVITE
 }

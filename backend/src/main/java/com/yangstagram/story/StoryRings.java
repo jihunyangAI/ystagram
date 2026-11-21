@@ -1,6 +1,7 @@
 package com.yangstagram.story;
 
 import com.yangstagram.common.time.LabClock;
+import com.yangstagram.relation.RelationSql;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collection;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class StoryRings {
 
-    public enum Ring { NONE, UNSEEN, SEEN }
+    /** CLOSE_FRIENDS: 안 본 스토리 중 친한 친구 공개가 있음 (초록 링) */
+    public enum Ring { NONE, UNSEEN, CLOSE_FRIENDS, SEEN }
 
     /** 보는 사람이 볼 수 있는 활성 스토리 조건 (s: stories, a: 작성자 users) */
     public static final String VISIBLE_ACTIVE = """
@@ -25,7 +27,9 @@ public class StoryRings {
             and (a.id = :me or not a.is_private or exists (
                  select 1 from follows vf where vf.follower_id = :me and vf.following_id = a.id
                  and vf.status = 'ACCEPTED'))
-            """;
+            and (s.audience = 'PUBLIC' or a.id = :me or exists (
+                 select 1 from close_friends cf where cf.user_id = a.id and cf.friend_id = :me))
+            and """ + RelationSql.notBlocked("a.id");
 
     private final NamedParameterJdbcTemplate jdbc;
     private final LabClock clock;
@@ -40,7 +44,8 @@ public class StoryRings {
         authorIds.forEach(id -> result.put(id, Ring.NONE));
         if (authorIds.isEmpty()) return result;
         jdbc.query("""
-                select s.author_id, bool_and(v.story_id is not null) as all_seen
+                select s.author_id, bool_and(v.story_id is not null) as all_seen,
+                       bool_or(v.story_id is null and s.audience = 'CLOSE_FRIENDS') as unseen_cf
                 from stories s
                 join users a on a.id = s.author_id
                 left join story_views v on v.story_id = s.id and v.viewer_id = :me
@@ -50,7 +55,8 @@ public class StoryRings {
                 new MapSqlParameterSource("ids", authorIds).addValue("me", viewerId)
                         .addValue("now", Timestamp.from(Instant.now(clock))),
                 rs -> {
-                    result.put(rs.getLong(1), rs.getBoolean(2) ? Ring.SEEN : Ring.UNSEEN);
+                    result.put(rs.getLong(1),
+                            rs.getBoolean(2) ? Ring.SEEN : rs.getBoolean(3) ? Ring.CLOSE_FRIENDS : Ring.UNSEEN);
                 });
         return result;
     }

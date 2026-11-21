@@ -21,6 +21,11 @@ public record MediaProperties(String storageDir, String seedDir) {
         return resolve(seedDir, "../seed-media/photos");
     }
 
+    /** 가짜 릴스 영상 폴더: 시드 사진 폴더 옆의 reels/ */
+    public Path reels() {
+        return seed().getParent().resolve("reels");
+    }
+
     public Path uploadDir() {
         return storage().resolve("uploads");
     }

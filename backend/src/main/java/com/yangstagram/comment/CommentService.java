@@ -11,6 +11,8 @@ import com.yangstagram.post.PostQueries.PostRow;
 import com.yangstagram.post.PostService;
 import com.yangstagram.post.dto.PostDtos.CommentView;
 import com.yangstagram.post.dto.PostDtos.LikeResult;
+import com.yangstagram.relation.RelationService;
+import com.yangstagram.relation.RelationSql;
 import com.yangstagram.user.dto.UserRows;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -39,24 +41,32 @@ public class CommentService {
 
     private static final String SELECT = """
             select c.id, c.post_id, c.body, c.created_at, c.edited_at, c.pinned_at, c.like_count, c.parent_id,
+                   c.restricted,
                    exists (select 1 from comment_likes cl where cl.comment_id = c.id and cl.user_id = :me)
                      as liked_by_me,
                    %s
             from comments c join users u on u.id = c.author_id
             """.formatted(UserRows.cols("u"));
 
+    /** 보는 사람(:me)에게 보이는 댓글 (:owner = 게시물 주인) */
+    private static final String SHOWN = " and (not c.restricted or c.author_id = :me or :owner = :me) and "
+            + RelationSql.notBlocked("u.id");
+
     private final NamedParameterJdbcTemplate jdbc;
     private final PostService postService;
     private final NotificationService notifications;
     private final Mentions mentions;
+    private final RelationService relations;
     private final LabClock clock;
 
     public CommentService(NamedParameterJdbcTemplate jdbc, PostService postService,
-                          NotificationService notifications, Mentions mentions, LabClock clock) {
+                          NotificationService notifications, Mentions mentions, RelationService relations,
+                          LabClock clock) {
         this.jdbc = jdbc;
         this.postService = postService;
         this.notifications = notifications;
         this.mentions = mentions;
+        this.relations = relations;
         this.clock = clock;
     }
 
@@ -70,19 +80,17 @@ public class CommentService {
         PostRow post = postService.getVisible(shortcode, viewerId);
         Instant now = Instant.now(clock);
         MapSqlParameterSource p = new MapSqlParameterSource("post", post.id()).addValue("me", viewerId)
+                .addValue("owner", post.author().id())
                 .addValue("after", afterId == null ? 0 : afterId).addValue("limit", PAGE + 1);
 
         List<CommentView> pinned = afterId != null ? List.of() : jdbc.query(SELECT + """
                 where c.post_id = :post and c.parent_id is null and c.pinned_at is not null and u.deleted_at is null
-                order by c.pinned_at
-                """, p, (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
+                """ + SHOWN + " order by c.pinned_at", p, (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
 
         List<CommentView> page = jdbc.query(SELECT + """
                 where c.post_id = :post and c.parent_id is null and c.pinned_at is null and u.deleted_at is null
                   and c.id > :after
-                order by c.id
-                limit :limit
-                """, p, (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
+                """ + SHOWN + " order by c.id limit :limit", p, (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
 
         String next = null;
         if (page.size() > PAGE) {
@@ -101,9 +109,9 @@ public class CommentService {
         Instant now = Instant.now(clock);
         return jdbc.query(SELECT + """
                 where c.parent_id = :parent and u.deleted_at is null
-                order by c.id
-                limit 500
-                """, new MapSqlParameterSource("parent", commentId).addValue("me", viewerId),
+                """ + SHOWN + " order by c.id limit 500",
+                new MapSqlParameterSource("parent", commentId).addValue("me", viewerId)
+                        .addValue("owner", post.author().id()),
                 (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
     }
 
@@ -117,7 +125,7 @@ public class CommentService {
                 });
         return comments.stream().map(c -> new CommentView(c.id(), c.author(), c.body(), c.createdAt(), c.parentId(),
                 c.canDelete(), c.canEdit(), c.canPin(), c.edited(), c.pinned(), c.likeCount(), c.likedByMe(),
-                counts.getOrDefault(c.id(), 0))).toList();
+                counts.getOrDefault(c.id(), 0), c.restricted())).toList();
     }
 
     // ------------------------------------------------------------ 쓰기·수정·삭제
@@ -139,14 +147,22 @@ public class CommentService {
             }
             parentAuthor = rows.getFirst();
         }
+        if (relations.blockedEitherWay(viewerId, post.author().id())) {
+            throw ApiException.forbidden("BLOCKED", "이 게시물에는 댓글을 달 수 없습니다.");
+        }
+        boolean restricted = relations.restricts(post.author().id(), viewerId);
         Instant now = Instant.now(clock);
         Long id = jdbc.queryForObject("""
-                insert into comments (post_id, author_id, parent_id, body, created_at)
-                values (:post, :me, :parent, :body, :now) returning id
+                insert into comments (post_id, author_id, parent_id, body, created_at, restricted)
+                values (:post, :me, :parent, :body, :now, :restricted) returning id
                 """, new MapSqlParameterSource("post", post.id()).addValue("me", viewerId)
-                .addValue("parent", parentId).addValue("body", body).addValue("now", Timestamp.from(now)), Long.class);
+                .addValue("parent", parentId).addValue("body", body).addValue("now", Timestamp.from(now))
+                .addValue("restricted", restricted), Long.class);
         jdbc.update("update posts set comment_count = comment_count + 1 where id = :id", Map.of("id", post.id()));
 
+        if (restricted) {
+            return get(id, viewerId, post); // 제한된 댓글: 승인 전에는 아무에게도 알리지 않는다
+        }
         Set<Long> notified = new HashSet<>();
         notified.add(viewerId);
         notifications.notify(post.author().id(), viewerId, NotificationType.COMMENT, post.id(), id, null, body);
@@ -199,6 +215,18 @@ public class CommentService {
         jdbc.update("delete from comments where id = :id", Map.of("id", commentId)); // 알림도 함께 지워짐 (FK)
         jdbc.update("update posts set comment_count = greatest(0, comment_count - :n) where id = :post",
                 Map.of("n", removed, "post", row.get("post_id")));
+    }
+
+    /** 제한한 사람의 댓글을 게시물 주인이 승인하면 모두에게 보인다 */
+    @Transactional
+    public CommentView approve(long commentId, long viewerId) {
+        Map<String, Object> row = parentInfo(commentId);
+        PostRow post = postService.getVisible((String) row.get("shortcode"), viewerId);
+        if (post.author().id() != viewerId) {
+            throw ApiException.forbidden("NOT_ALLOWED", "게시물 주인만 승인할 수 있습니다.");
+        }
+        jdbc.update("update comments set restricted = false where id = :id", Map.of("id", commentId));
+        return get(commentId, viewerId, post);
     }
 
     // ------------------------------------------------------------ 고정·좋아요
@@ -273,7 +301,7 @@ public class CommentService {
     private CommentView get(long id, long viewerId, PostRow post) {
         Instant now = Instant.now(clock);
         List<CommentView> list = jdbc.query(SELECT + " where c.id = :id",
-                new MapSqlParameterSource("id", id).addValue("me", viewerId),
+                new MapSqlParameterSource("id", id).addValue("me", viewerId).addValue("owner", post.author().id()),
                 (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
         return withReplyCounts(list).getFirst();
     }

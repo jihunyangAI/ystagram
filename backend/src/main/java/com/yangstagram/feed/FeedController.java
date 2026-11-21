@@ -31,8 +31,9 @@ public class FeedController {
     }
 
     @GetMapping("/feed")
-    public Slice<PostView> feed(@RequestParam(required = false) String cursor) {
-        return queries.feed(CurrentUser.requireId(), Cursor.decode(cursor), PAGE);
+    public Slice<PostView> feed(@RequestParam(required = false) String cursor,
+                                @RequestParam(defaultValue = "following") String mode) {
+        return queries.feed(CurrentUser.requireId(), Cursor.decode(cursor), PAGE, "favorites".equals(mode));
     }
 
     /** 홈 오른쪽·피드 끝의 "회원님을 위한 추천" */

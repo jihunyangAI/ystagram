@@ -152,6 +152,7 @@ public class DmService {
         long id;
         if (ids.size() == 1) {
             long other = ids.getFirst();
+            requireNotBlocked(me, other);
             String key = Math.min(me, other) + ":" + Math.max(me, other);
             id = jdbc.queryForObject("""
                     insert into conversations (is_group, direct_key, created_by, created_at, last_message_at)
@@ -181,9 +182,19 @@ public class DmService {
     /** 받는 사람이 보낸 사람을 팔로우하면 기본, 아니면 요청함 */
     private String folderFor(long recipient, long sender) {
         Integer n = jdbc.queryForObject("""
-                select count(*) from follows where follower_id = :r and following_id = :s and status = 'ACCEPTED'
+                select count(*) from follows f where f.follower_id = :r and f.following_id = :s and f.status = 'ACCEPTED'
+                  and not exists (select 1 from restricts x where x.user_id = :r and x.restricted_id = :s)
                 """, Map.of("r", recipient, "s", sender), Integer.class);
         return n != null && n > 0 ? "PRIMARY" : "REQUEST";
+    }
+
+    private void requireNotBlocked(long me, long other) {
+        Integer n = jdbc.queryForObject("""
+                select count(*) from blocks where (blocker_id = :a and blocked_id = :b) or (blocker_id = :b and blocked_id = :a)
+                """, Map.of("a", me, "b", other), Integer.class);
+        if (n != null && n > 0) {
+            throw ApiException.forbidden("BLOCKED", "이 계정과는 메시지를 주고받을 수 없습니다.");
+        }
     }
 
     private void addMember(long conversationId, long userId, String folder, Timestamp now) {
@@ -199,13 +210,15 @@ public class DmService {
         Map<String, Object> c = jdbc.queryForMap("select is_group, title from conversations where id = :id",
                 Map.of("id", id));
         List<Member> members = jdbc.query("""
-                select %s, cm.last_read_message_id, u.last_active_at
+                select %s, cm.last_read_message_id, u.last_active_at,
+                       exists (select 1 from restricts x where x.user_id = u.id and x.restricted_id = :me) as hides
                 from conversation_members cm join users u on u.id = cm.user_id
                 where cm.conversation_id = :id and cm.user_id <> :me
                 order by cm.joined_at, u.id
                 """.formatted(UserRows.cols("u")), Map.of("id", id, "me", me), (rs, i) -> {
             UserSummary u = UserRows.read(rs, "u");
             Timestamp t = rs.getTimestamp("last_active_at");
+            if (rs.getBoolean("hides")) return new Member(u, 0, false, null);
             return new Member(u, rs.getLong("last_read_message_id"), realtime.isOnline(u.id()),
                     t == null ? null : t.toInstant());
         });
@@ -386,6 +399,7 @@ public class DmService {
     private MessageView insert(long conversationId, long me, String kind, String body, StoredImage img, Long postId,
                                Long storyId, Long replyToId) {
         membership(conversationId, me);
+        requireCanSend(conversationId, me);
         if (replyToId != null) {
             Integer n = jdbc.queryForObject("select count(*) from messages where id = :r and conversation_id = :c",
                     Map.of("r", replyToId, "c", conversationId), Integer.class);
@@ -423,6 +437,16 @@ public class DmService {
         for (String part : key.split(":")) {
             long uid = Long.parseLong(part);
             if (uid != me) addMember(conversationId, uid, folderFor(uid, me), now);
+        }
+    }
+
+    private void requireCanSend(long conversationId, long me) {
+        String key = jdbc.queryForObject("select direct_key from conversations where id = :c",
+                Map.of("c", conversationId), String.class);
+        if (key == null) return;
+        for (String part : key.split(":")) {
+            long uid = Long.parseLong(part);
+            if (uid != me) requireNotBlocked(me, uid);
         }
     }
 

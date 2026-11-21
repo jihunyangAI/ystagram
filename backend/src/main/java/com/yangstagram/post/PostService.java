@@ -7,6 +7,8 @@ import com.yangstagram.media.MediaStorage;
 import com.yangstagram.media.StoredImage;
 import com.yangstagram.post.PostQueries.PostRow;
 import com.yangstagram.post.dto.PostDtos.CreatePostRequest;
+import com.yangstagram.post.dto.PostDtos.CreateReelRequest;
+import com.yangstagram.post.dto.PostDtos.TagInput;
 import com.yangstagram.post.dto.PostDtos.LikeResult;
 import com.yangstagram.notification.Mentions;
 import com.yangstagram.notification.NotificationService;
@@ -104,13 +106,14 @@ public class PostService {
         String shortcode = Shortcodes.random();
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, location_id, hide_like_count,
-                                   comments_disabled, created_at, updated_at)
-                values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now)
+                                   comments_disabled, created_at, updated_at, filter)
+                values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now, :filter)
                 returning id
                 """, new MapSqlParameterSource("code", shortcode).addValue("author", authorId)
                 .addValue("type", images.size() > 1 ? "CAROUSEL" : "PHOTO").addValue("caption", caption)
                 .addValue("location", location == null ? null : locationId(location, now))
                 .addValue("hide", req.hideLikes()).addValue("noComments", req.noComments())
+                .addValue("filter", req.filter() == null || req.filter().length() > 20 ? null : req.filter())
                 .addValue("now", Timestamp.from(now)), Long.class);
 
         for (int i = 0; i < images.size(); i++) {
@@ -126,8 +129,136 @@ public class PostService {
         }
         attachHashtags(postId, Hashtags.extract(caption));
         jdbc.update("update users set posts_count = posts_count + 1 where id = :id", Map.of("id", authorId));
+        attachTags(postId, authorId, req.tags(), images.size());
+        inviteCollaborators(postId, authorId, req.collaborators());
         mentions.notifyAll(caption, authorId, postId, null, Set.of());
         return queries.views(List.of(postId), authorId).getFirst();
+    }
+
+    // ------------------------------------------------------------ 사람 태그·공동 작업자
+
+    public static final int MAX_TAGS = 20;
+    public static final int MAX_COLLABORATORS = 5;
+
+    /** 태그한 사람에게 알림. 차단 관계거나 없는 사용자는 조용히 뺀다 */
+    private void attachTags(long postId, long authorId, List<TagInput> tags, int mediaCount) {
+        if (tags == null || tags.isEmpty()) return;
+        if (tags.size() > MAX_TAGS) {
+            throw ApiException.badRequest("TOO_MANY_TAGS", "사람 태그는 " + MAX_TAGS + "명까지 할 수 있습니다.");
+        }
+        java.util.Set<Long> done = new java.util.HashSet<>();
+        for (TagInput t : tags) {
+            if (t.username() == null) continue;
+            List<Long> ids = jdbc.queryForList("select id from users where username = :u and deleted_at is null",
+                    Map.of("u", t.username().strip().toLowerCase().replace("@", "")), Long.class);
+            if (ids.isEmpty()) continue;
+            long uid = ids.getFirst();
+            if (followService.blocked(authorId, uid) || !done.add(uid)) continue;
+            int index = t.mediaIndex() == null ? 0 : Math.max(0, Math.min(mediaCount - 1, t.mediaIndex()));
+            double x = t.x() == null ? 0.5 : Math.max(0, Math.min(1, t.x()));
+            double y = t.y() == null ? 0.5 : Math.max(0, Math.min(1, t.y()));
+            jdbc.update("""
+                    insert into post_tags (post_id, user_id, media_index, x, y) values (:p, :u, :i, :x, :y)
+                    on conflict do nothing
+                    """, new MapSqlParameterSource("p", postId).addValue("u", uid).addValue("i", index)
+                    .addValue("x", x).addValue("y", y));
+            notifications.notify(uid, authorId, NotificationType.TAG, postId, null, null, null);
+        }
+    }
+
+    /** 공동 작업자 초대: 받은 사람이 수락하면 그 사람 프로필과 팔로워 피드에도 보인다 */
+    private void inviteCollaborators(long postId, long authorId, List<String> usernames) {
+        if (usernames == null || usernames.isEmpty()) return;
+        List<String> names = usernames.stream().filter(java.util.Objects::nonNull)
+                .map(n -> n.strip().toLowerCase().replace("@", "")).filter(n -> !n.isEmpty()).distinct().toList();
+        if (names.size() > MAX_COLLABORATORS) {
+            throw ApiException.badRequest("TOO_MANY_COLLABORATORS", "공동 작업자는 " + MAX_COLLABORATORS + "명까지 초대할 수 있습니다.");
+        }
+        Timestamp now = Timestamp.from(Instant.now(clock));
+        for (String name : names) {
+            List<Long> ids = jdbc.queryForList("select id from users where username = :u and deleted_at is null",
+                    Map.of("u", name), Long.class);
+            if (ids.isEmpty() || ids.getFirst() == authorId || followService.blocked(authorId, ids.getFirst())) continue;
+            jdbc.update("""
+                    insert into post_collaborators (post_id, user_id, status, created_at) values (:p, :u, 'PENDING', :now)
+                    on conflict do nothing
+                    """, new MapSqlParameterSource("p", postId).addValue("u", ids.getFirst()).addValue("now", now));
+            notifications.notify(ids.getFirst(), authorId, NotificationType.COLLAB_INVITE, postId, null, null, null);
+        }
+    }
+
+    /** 공동 작업 초대 수락·거절 (거절하면 초대가 사라진다) */
+    @Transactional
+    public PostView answerCollab(String shortcode, long viewerId, boolean accept) {
+        PostRow row = getVisible(shortcode, viewerId);
+        int changed = accept
+                ? jdbc.update("""
+                        update post_collaborators set status = 'ACCEPTED'
+                        where post_id = :p and user_id = :me and status = 'PENDING'
+                        """, Map.of("p", row.id(), "me", viewerId))
+                : jdbc.update("delete from post_collaborators where post_id = :p and user_id = :me",
+                        Map.of("p", row.id(), "me", viewerId));
+        if (changed == 0) throw ApiException.notFound("공동 작업 초대를 찾을 수 없습니다.");
+        notifications.retract(row.author().id(), NotificationType.COLLAB_INVITE, row.id(), null, null, viewerId);
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
+    /** 태그된 사람이 스스로 태그를 뺀다 */
+    @Transactional
+    public PostView removeMyTag(String shortcode, long viewerId) {
+        PostRow row = getVisible(shortcode, viewerId);
+        jdbc.update("delete from post_tags where post_id = :p and user_id = :me", Map.of("p", row.id(), "me", viewerId));
+        notifications.retract(row.author().id(), NotificationType.TAG, row.id(), null, null, viewerId);
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
+    // ------------------------------------------------------------ 릴스
+
+    public static final long MAX_REEL_MS = 20 * 60 * 1000;     // 20분
+    public static final long RECOMMEND_LIMIT_MS = 3 * 60 * 1000; // 3분 넘으면 비팔로워 추천 제외
+
+    /** 릴스 올리기: 영상 1개 + 첫 화면 사진(poster). 길이는 화면이 영상을 읽어서 보낸다 */
+    @Transactional
+    public PostView createReel(long authorId, MultipartFile video, MultipartFile poster, CreateReelRequest req) {
+        if (video == null || video.isEmpty()) throw ApiException.badRequest("MEDIA_REQUIRED", "영상을 선택해 주세요.");
+        if (poster == null || poster.isEmpty()) throw ApiException.badRequest("POSTER_REQUIRED", "첫 화면 사진이 필요합니다.");
+        long duration = req.durationMs() == null ? 0 : req.durationMs();
+        if (duration <= 0) throw ApiException.badRequest("BAD_DURATION", "영상 길이를 알 수 없습니다.");
+        if (duration > MAX_REEL_MS) throw ApiException.badRequest("REEL_TOO_LONG", "릴스는 20분까지 올릴 수 있습니다.");
+        String caption = validateCaption(req.caption());
+        MediaStorage.StoredVideo stored = storage.saveVideo(video);
+        StoredImage cover = storage.saveImage(poster);
+        Instant now = Instant.now(clock);
+        Long postId = jdbc.queryForObject("""
+                insert into posts (shortcode, author_id, type, caption, hide_like_count, comments_disabled,
+                                   recommendable, created_at, updated_at)
+                values (:code, :author, 'REEL', :caption, :hide, :noComments, :rec, :now, :now) returning id
+                """, new MapSqlParameterSource("code", Shortcodes.random()).addValue("author", authorId)
+                .addValue("caption", caption).addValue("hide", Boolean.TRUE.equals(req.hideLikeCount()))
+                .addValue("noComments", Boolean.TRUE.equals(req.commentsDisabled()))
+                .addValue("rec", duration <= RECOMMEND_LIMIT_MS).addValue("now", Timestamp.from(now)), Long.class);
+        jdbc.update("""
+                insert into post_media (post_id, position, url, thumb_url, width, height, media_type, duration_ms)
+                values (:p, 0, :url, :thumb, :w, :h, 'VIDEO', :d)
+                """, new MapSqlParameterSource("p", postId).addValue("url", stored.url())
+                .addValue("thumb", cover.thumbUrl()).addValue("w", cover.width()).addValue("h", cover.height())
+                .addValue("d", duration));
+        attachHashtags(postId, Hashtags.extract(caption));
+        jdbc.update("update users set posts_count = posts_count + 1 where id = :id", Map.of("id", authorId));
+        mentions.notifyAll(caption, authorId, postId, null, Set.of());
+        return queries.views(List.of(postId), authorId).getFirst();
+    }
+
+    /** 릴스 등 조회 기록: 사람당 한 번만 센다 */
+    @Transactional
+    public int recordView(String shortcode, long viewerId) {
+        PostRow row = getVisible(shortcode, viewerId);
+        int inserted = jdbc.update("""
+                insert into post_views (user_id, post_id, created_at) values (:me, :p, :now) on conflict do nothing
+                """, new MapSqlParameterSource("me", viewerId).addValue("p", row.id())
+                .addValue("now", Timestamp.from(Instant.now(clock))));
+        return jdbc.queryForObject("update posts set view_count = view_count + :d where id = :id returning view_count",
+                Map.of("d", inserted, "id", row.id()), Integer.class);
     }
 
     // ------------------------------------------------------------ 수정·삭제

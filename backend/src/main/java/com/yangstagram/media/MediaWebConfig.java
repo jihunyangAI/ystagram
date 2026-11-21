@@ -25,6 +25,10 @@ public class MediaWebConfig implements WebMvcConfigurer {
         registry.addResourceHandler("/media/seed/**")
                 .addResourceLocations(dirUri(props.seed()))
                 .setCacheControl(cache);
+        // 가짜 릴스 영상 (gradlew reelClips로 만든 것). 영상은 Range 요청(구간 재생)을 지원해야 한다 — 정적 리소스 처리기가 지원함
+        registry.addResourceHandler("/media/reels/**")
+                .addResourceLocations(dirUri(props.reels()))
+                .setCacheControl(cache);
     }
 
     /** 폴더가 아직 없어도 끝에 '/'가 붙도록 */
