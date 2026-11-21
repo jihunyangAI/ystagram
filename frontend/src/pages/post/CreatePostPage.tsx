@@ -8,7 +8,12 @@ import { CaptionField, MAX_CAPTION, MAX_HASHTAGS, Toggle, countHashtags } from '
 import { toast } from '../../components/Toast'
 import { api } from '../../lib/api'
 import { useMe } from '../../lib/auth'
-import type { LocationItem, PostView } from '../../lib/types'
+import type { LocationItem, PostView, UserSummary } from '../../lib/types'
+import { EditStep } from './EditStep'
+import { NO_ADJUST, cssFilter, drawVignette, vignetteStyle } from './filters'
+import type { Adjust } from './filters'
+import { CollaboratorField, UserSearchBox } from './PeopleFields'
+import type { DraftTag } from './PeopleFields'
 
 const MAX_FILES = 20
 const OUTPUT_WIDTH = 1080
@@ -30,15 +35,18 @@ interface Picked {
   fx: number
   fy: number
   alt: string
+  /** ③ 편집: 필터 이름과 조정 값 */
+  filter: string
+  adjust: Adjust
 }
 
-type Step = 'select' | 'crop' | 'details'
+type Step = 'select' | 'crop' | 'edit' | 'details'
 
 function loadImage(file: File): Promise<Picked> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
-    img.onload = () => resolve({ id: url, url, img, zoom: 1, fx: 0, fy: 0, alt: '' })
+    img.onload = () => resolve({ id: url, url, img, zoom: 1, fx: 0, fy: 0, alt: '', filter: 'normal', adjust: NO_ADJUST })
     img.onerror = () => {
       URL.revokeObjectURL(url)
       reject(new Error(`${file.name}: 열 수 없는 사진입니다`))
@@ -69,14 +77,18 @@ function render(p: Picked, ratio: number): Promise<Blob> {
   const ctx = canvas.getContext('2d')!
   ctx.imageSmoothingQuality = 'high'
   const l = layout(p, W, H)
+  ctx.filter = cssFilter(p.filter, p.adjust)
   ctx.drawImage(p.img, l.x, l.y, l.dw, l.dh)
+  ctx.filter = 'none'
+  drawVignette(ctx, W, H, p.adjust.vignette)
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('사진을 만들지 못했습니다'))), 'image/jpeg', 0.9),
   )
 }
 
 /**
- * 새 게시물 만들기: ① 사진 선택(최대 20장) → ② 자르기(비율·확대·위치) → ③ 문구·위치·고급 설정 → 공유
+ * 새 게시물 만들기: ① 사진 선택(최대 20장) → ② 자르기(비율·확대·위치) → ③ 필터·조정
+ * → ④ 문구·위치·사람 태그·공동 작업자·고급 설정 → 공유
  */
 export function CreatePostPage() {
   const navigate = useNavigate()
@@ -92,6 +104,10 @@ export function CreatePostPage() {
   const [commentsDisabled, setNoComments] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [tags, setTags] = useState<DraftTag[]>([])
+  const [pendingTag, setPendingTag] = useState<{ mediaIndex: number; x: number; y: number } | null>(null)
+  const [collaborators, setCollaborators] = useState<UserSummary[]>([])
+  const [previewIndex, setPreviewIndex] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
 
   // 화면을 떠나면 미리보기 주소 정리
@@ -145,7 +161,16 @@ export function CreatePostPage() {
       for (let i = 0; i < items.length; i++) {
         form.append('files', await render(items[i], ratio), `photo-${i + 1}.jpg`)
       }
-      const data = { caption, location, altTexts: items.map((i) => i.alt), hideLikeCount, commentsDisabled }
+      const data = {
+        caption,
+        location,
+        altTexts: items.map((i) => i.alt),
+        hideLikeCount,
+        commentsDisabled,
+        tags: tags.map((t) => ({ username: t.user.username, mediaIndex: t.mediaIndex, x: t.x, y: t.y })),
+        collaborators: collaborators.map((u) => u.username),
+        filter: items[0]?.filter === 'normal' ? null : items[0]?.filter,
+      }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
       const post = await api.upload<PostView>('POST', '/api/posts', form)
       qc.invalidateQueries({ queryKey: ['feed'] })
@@ -160,7 +185,8 @@ export function CreatePostPage() {
   }
 
   const back = () => {
-    if (step === 'details') setStep('crop')
+    if (step === 'details') setStep('edit')
+    else if (step === 'edit') setStep('crop')
     else if (step === 'crop') {
       items.forEach((i) => URL.revokeObjectURL(i.url))
       setItems([])
@@ -168,10 +194,10 @@ export function CreatePostPage() {
     } else navigate(-1)
   }
 
-  const title = step === 'select' ? '새 게시물 만들기' : step === 'crop' ? '자르기' : '새 게시물 만들기'
+  const title = step === 'select' ? '새 게시물 만들기' : step === 'crop' ? '자르기' : step === 'edit' ? '편집' : '새 게시물 만들기'
   const next =
-    step === 'crop' ? (
-      <button className="font-semibold text-primary hover:text-text" onClick={() => setStep('details')}>
+    step === 'crop' || step === 'edit' ? (
+      <button className="font-semibold text-primary hover:text-text" onClick={() => setStep(step === 'crop' ? 'edit' : 'details')}>
         다음
       </button>
     ) : step === 'details' ? (
@@ -236,10 +262,29 @@ export function CreatePostPage() {
           />
         )}
 
+        {step === 'edit' && items[current] && (
+          <EditStep
+            items={items}
+            current={current}
+            setCurrent={setCurrent}
+            update={update}
+            preview={(style, overlay) => <Preview items={items} ratio={ratio} index={current} setIndex={setCurrent} imgStyle={style} overlay={overlay} />}
+          />
+        )}
+
         {step === 'details' && me && (
           <div className="flex flex-col md:flex-row">
             <div className="md:w-[55%] md:shrink-0">
-              <Preview items={items} ratio={ratio} />
+              <Preview
+                items={items}
+                ratio={ratio}
+                index={previewIndex}
+                setIndex={setPreviewIndex}
+                tags={tags.filter((t) => t.mediaIndex === previewIndex)}
+                pending={pendingTag?.mediaIndex === previewIndex ? pendingTag : null}
+                onTap={(x, y) => setPendingTag({ mediaIndex: previewIndex, x, y })}
+              />
+              <p className="px-3 py-2 text-center text-xs text-muted">사진을 누르면 그 자리에 사람을 태그할 수 있습니다.</p>
             </div>
             <div className="flex-1 space-y-5 p-4 md:max-h-[640px] md:overflow-y-auto md:border-l md:border-border">
               <div className="flex items-center gap-2 text-sm font-semibold">
@@ -247,6 +292,42 @@ export function CreatePostPage() {
               </div>
               <CaptionField value={caption} onChange={setCaption} autoFocus />
               <LocationField value={location} onChange={setLocation} />
+              <section className="border-t border-border pt-4">
+                <h2 className="mb-2 text-sm font-semibold">사람 태그 ({tags.length}/20)</h2>
+                {pendingTag ? (
+                  <div className="space-y-1">
+                    <UserSearchBox
+                      autoFocus
+                      placeholder="태그할 사람 검색"
+                      exclude={tags.map((t) => t.user.id)}
+                      onPick={(u) => {
+                        setTags((t) => [...t, { user: u, ...pendingTag }])
+                        setPendingTag(null)
+                      }}
+                    />
+                    <button className="text-xs text-muted" onClick={() => setPendingTag(null)}>
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">왼쪽 사진에서 태그할 위치를 누르세요.</p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {tags.map((t) => (
+                    <span key={t.user.id} className="flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs">
+                      {t.user.username}
+                      {items.length > 1 && <span className="text-muted">· {t.mediaIndex + 1}번째</span>}
+                      <button aria-label={`${t.user.username} 태그 삭제`} onClick={() => setTags((x) => x.filter((y) => y.user.id !== t.user.id))}>
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </section>
+              <section className="border-t border-border pt-4">
+                <h2 className="mb-2 text-sm font-semibold">공동 작업자 초대</h2>
+                <CollaboratorField value={collaborators} onChange={setCollaborators} meId={me.user.id} />
+              </section>
               <details className="border-t border-border pt-4">
                 <summary className="cursor-pointer text-sm font-semibold">접근성</summary>
                 <p className="mt-2 text-xs text-muted">
@@ -479,8 +560,28 @@ function CropStep({
 
 // ------------------------------------------------------------ ③ 미리보기·위치
 
-function Preview({ items, ratio }: { items: Picked[]; ratio: number }) {
-  const [index, setIndex] = useState(0)
+/** 잘린 모양 그대로의 미리보기. 편집 단계에서는 필터를, 문구 단계에서는 사람 태그를 얹는다 */
+function Preview({
+  items,
+  ratio,
+  index,
+  setIndex,
+  imgStyle,
+  overlay,
+  tags = [],
+  pending,
+  onTap,
+}: {
+  items: Picked[]
+  ratio: number
+  index: number
+  setIndex: (i: number) => void
+  imgStyle?: React.CSSProperties
+  overlay?: React.CSSProperties
+  tags?: DraftTag[]
+  pending?: { x: number; y: number } | null
+  onTap?: (x: number, y: number) => void
+}) {
   const frame = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(0)
   useEffect(() => {
@@ -494,9 +595,42 @@ function Preview({ items, ratio }: { items: Picked[]; ratio: number }) {
   const p = items[Math.min(index, items.length - 1)]
   const l = w ? layout(p, w, h) : null
   return (
-    <div ref={frame} className="relative w-full overflow-hidden bg-black" style={{ aspectRatio: String(ratio) }}>
+    <div
+      ref={frame}
+      className={clsx('relative w-full overflow-hidden bg-black', onTap && 'cursor-crosshair')}
+      style={{ aspectRatio: String(ratio) }}
+      onClick={(e) => {
+        if (!onTap || e.target !== e.currentTarget.querySelector('[data-photo]')) return
+        const r = e.currentTarget.getBoundingClientRect()
+        onTap((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height)
+      }}
+    >
       {l && (
-        <img src={p.url} alt="" className="absolute max-w-none" style={{ width: l.dw, height: l.dh, left: l.x, top: l.y }} />
+        <img
+          data-photo
+          src={p.url}
+          alt=""
+          className="absolute max-w-none"
+          style={{ width: l.dw, height: l.dh, left: l.x, top: l.y, ...(imgStyle ?? { filter: cssFilter(p.filter, p.adjust) }) }}
+        />
+      )}
+      {(overlay ?? vignetteStyle(p.adjust.vignette)) && (
+        <div className="pointer-events-none absolute inset-0" style={overlay ?? vignetteStyle(p.adjust.vignette)} />
+      )}
+      {tags.map((t) => (
+        <span
+          key={t.user.id}
+          className="pointer-events-none absolute -translate-x-1/2 rounded bg-black/75 px-2 py-0.5 text-xs font-semibold text-white"
+          style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }}
+        >
+          {t.user.username}
+        </span>
+      ))}
+      {pending && (
+        <span
+          className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary"
+          style={{ left: `${pending.x * 100}%`, top: `${pending.y * 100}%` }}
+        />
       )}
       {items.length > 1 && (
         <>

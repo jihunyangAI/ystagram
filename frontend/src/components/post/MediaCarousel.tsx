@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Heart } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
+import { ChevronLeft, ChevronRight, Heart, UserRound, Volume2, VolumeX } from 'lucide-react'
 import clsx from 'clsx'
-import type { MediaView } from '../../lib/types'
+import type { MediaView, TagView } from '../../lib/types'
 
 interface Props {
   media: MediaView[]
@@ -12,6 +13,8 @@ interface Props {
   className?: string
   /** 지금 보고 있는 사진 번호가 바뀔 때 (점 표시용) */
   onIndexChange?: (index: number) => void
+  /** 사진 속 사람 태그: 한 번 탭하면 이름표가 보인다 */
+  tags?: TagView[]
 }
 
 /** 게시물 비율: 첫 장 기준, 인스타그램 허용 범위(세로 3:4 ~ 가로 1.91:1)로 자른다 */
@@ -22,7 +25,10 @@ function ratioOf(m: MediaView): number {
 /**
  * 사진 여러 장 넘기기. 손가락으로 밀거나 화살표·점으로 이동, 두 번 탭하면 하트가 뜬다.
  */
-export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChange }: Props) {
+export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChange, tags = [] }: Props) {
+  const [showTags, setShowTags] = useState(false)
+  const [muted, setMuted] = useState(true)
+  const single = useRef<number | undefined>(undefined)
   const track = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
   const [hearts, setHearts] = useState<number[]>([])
@@ -49,14 +55,18 @@ export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChang
     const now = Date.now()
     if (now - lastTap.current < 300) {
       lastTap.current = 0
+      window.clearTimeout(single.current)
       const id = now
       setHearts((h) => [...h, id])
       window.setTimeout(() => setHearts((h) => h.filter((x) => x !== id)), 950)
       onDoubleTap?.()
     } else {
       lastTap.current = now
+      // 두 번째 탭이 오지 않으면 한 번 탭 = 사람 태그 보이기/숨기기
+      single.current = window.setTimeout(() => setShowTags((v) => !v), 300)
     }
   }
+  const currentTags = tags.filter((t) => t.mediaIndex === index)
 
   return (
     <div
@@ -72,16 +82,53 @@ export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChang
       >
         {media.map((m, i) => (
           <div key={i} className="relative h-full w-full shrink-0 snap-center snap-always">
-            <img
-              src={m.url}
-              alt={m.altText ?? `사진 ${i + 1}/${media.length}`}
-              draggable={false}
-              loading={i === 0 ? 'eager' : 'lazy'}
-              className="h-full w-full object-cover"
-            />
+            {m.type === 'VIDEO' ? (
+              <AutoVideo media={m} muted={muted} />
+            ) : (
+              <img
+                src={m.url}
+                alt={m.altText ?? `사진 ${i + 1}/${media.length}`}
+                draggable={false}
+                loading={i === 0 ? 'eager' : 'lazy'}
+                className="h-full w-full object-cover"
+              />
+            )}
+            {showTags &&
+              tags
+                .filter((t) => t.mediaIndex === i)
+                .map((t) => (
+                  <Link
+                    key={t.user.id}
+                    to={`/${t.user.username}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute -translate-x-1/2 rounded-md bg-black/75 px-2 py-1 text-xs font-semibold whitespace-nowrap text-white"
+                    style={{ left: `${t.x * 100}%`, top: `${t.y * 100}%` }}
+                  >
+                    {t.user.username}
+                  </Link>
+                ))}
           </div>
         ))}
       </div>
+
+      {currentTags.length > 0 && (
+        <button
+          aria-label={showTags ? '태그 숨기기' : `태그된 사람 ${currentTags.length}명 보기`}
+          onClick={() => setShowTags((v) => !v)}
+          className="absolute bottom-3 left-3 rounded-full bg-black/70 p-1.5 text-white"
+        >
+          <UserRound size={14} className="fill-white" />
+        </button>
+      )}
+      {media[index]?.type === 'VIDEO' && (
+        <button
+          aria-label={muted ? '소리 켜기' : '소리 끄기'}
+          onClick={() => setMuted((m) => !m)}
+          className="absolute right-3 bottom-3 rounded-full bg-black/70 p-1.5 text-white"
+        >
+          {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+        </button>
+      )}
 
       {/* 더블탭 하트 */}
       {hearts.map((id) => (
@@ -128,5 +175,36 @@ export function CarouselDots({ count, index }: { count: number; index: number })
         <span key={i} className={clsx('h-1.5 w-1.5 rounded-full', i === index ? 'bg-primary' : 'bg-border')} />
       ))}
     </div>
+  )
+}
+
+/** 화면에 보이면 자동 재생, 벗어나면 멈추는 영상 (피드·상세의 릴스) */
+export function AutoVideo({ media, muted, className }: { media: MediaView; muted: boolean; className?: string }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting && e.intersectionRatio > 0.6) void el.play().catch(() => undefined)
+        else el.pause()
+      },
+      { threshold: [0, 0.6, 1] },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  return (
+    <video
+      ref={ref}
+      src={media.url}
+      poster={media.thumbUrl}
+      muted={muted}
+      loop
+      playsInline
+      preload="metadata"
+      aria-label={media.altText ?? '영상'}
+      className={clsx('h-full w-full object-cover', className)}
+    />
   )
 }

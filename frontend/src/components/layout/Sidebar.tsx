@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CircleFadingPlus, FlaskConical, Grid2x2Plus, LogOut, SquarePlus } from 'lucide-react'
+import { CircleFadingPlus, Clapperboard, FlaskConical, Grid2x2Plus, LogOut, Menu, SquarePlus } from 'lucide-react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import clsx from 'clsx'
 import { useLogout } from '../../lib/auth'
@@ -52,6 +52,10 @@ export function Sidebar({ me }: { me: Me }) {
       </nav>
 
       <div className="flex flex-col gap-1">
+        <NavLink to="/accounts/settings" className={({ isActive }) => itemClass(isActive)} title="더 보기">
+          <Menu size={24} strokeWidth={1.8} />
+          <span className="hidden xl:inline">더 보기</span>
+        </NavLink>
         <NavLink to="/lab" className={({ isActive }) => itemClass(isActive)} title="Lab">
           <FlaskConical size={24} strokeWidth={1.8} className="text-primary" />
           <span className="hidden xl:inline">Lab</span>
@@ -104,6 +108,9 @@ function CreateMenu() {
           </Link>
           <Link role="menuitem" to="/create/story" onClick={() => setOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2">
             스토리 <CircleFadingPlus size={18} />
+          </Link>
+          <Link role="menuitem" to="/create/reel" onClick={() => setOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2">
+            릴스 <Clapperboard size={18} />
           </Link>
         </div>
       )}

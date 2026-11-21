@@ -4,7 +4,7 @@ import { Avatar } from '../Avatar'
 
 /**
  * 스토리 링이 있는 프로필 사진.
- * 안 본 스토리 = 노랑~분홍~보라 그라데이션, 다 봄 = 회색, 없음 = 링 없음.
+ * 안 본 스토리 = 노랑~분홍~보라 그라데이션, 친한 친구 공개 = 초록, 다 봄 = 회색, 없음 = 링 없음.
  */
 export function StoryRingAvatar({
   user,
@@ -23,7 +23,11 @@ export function StoryRingAvatar({
     <span
       className={clsx(
         'inline-flex shrink-0 rounded-full',
-        ring === 'UNSEEN' ? 'bg-[conic-gradient(from_200deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5,#feda75)]' : 'bg-border',
+        ring === 'UNSEEN'
+          ? 'bg-[conic-gradient(from_200deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5,#feda75)]'
+          : ring === 'CLOSE_FRIENDS'
+            ? 'bg-[#1fc25b]'
+            : 'bg-border',
         className,
       )}
       style={{ padding: pad }}

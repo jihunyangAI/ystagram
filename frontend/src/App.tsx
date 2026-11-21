@@ -1,9 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router'
-import { Clapperboard, Compass } from 'lucide-react'
 import { AppLayout } from './components/layout/AppLayout'
 import { LabSwitcher } from './components/lab/LabSwitcher'
 import { Toaster } from './components/Toast'
-import { ComingSoonPage } from './pages/ComingSoonPage'
 import { HomePage } from './pages/HomePage'
 import { LabPage } from './pages/LabPage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -19,6 +17,11 @@ import { CreatePostPage } from './pages/post/CreatePostPage'
 import { PostPage } from './pages/post/PostPage'
 import { SearchPage } from './pages/search/SearchPage'
 import { PlacePage, TagPage } from './pages/search/TopicPages'
+import { ExplorePage } from './pages/search/ExplorePage'
+import { CreateReelPage } from './pages/reels/CreateReelPage'
+import { ReelsPage } from './pages/reels/ReelsPage'
+import { SettingsPage } from './pages/settings/SettingsPage'
+import { PickListPage, RelationListPage } from './pages/settings/RelationPages'
 import { CreateStoryPage } from './pages/story/CreateStoryPage'
 import { StoryArchivePage } from './pages/story/StoryArchivePage'
 import { StoryViewerPage } from './pages/story/StoryViewerPage'
@@ -32,21 +35,30 @@ export default function App() {
 
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
-          <Route path="reels" element={<ComingSoonPage title="릴스" stage="M3" icon={Clapperboard} />} />
+          <Route path="reels" element={<ReelsPage />} />
+          <Route path="reels/:shortcode" element={<ReelsPage />} />
+          <Route path="create/reel" element={<CreateReelPage />} />
           <Route path="direct/inbox" element={<DirectPage />} />
           <Route path="direct/t/:id" element={<DirectPage />} />
-          <Route path="explore" element={<ComingSoonPage title="탐색" stage="M3" icon={Compass} />} />
+          <Route path="explore" element={<ExplorePage />} />
           <Route path="explore/search" element={<SearchPage />} />
           <Route path="explore/tags/:tag" element={<TagPage />} />
           <Route path="explore/locations/:id" element={<PlacePage />} />
           <Route path="notifications" element={<ActivityPage />} />
           <Route path="notifications/requests" element={<FollowRequestsPage />} />
           <Route path="stories/:username" element={<StoryViewerPage />} />
+          <Route path="stories/highlights/:id" element={<StoryViewerPage />} />
           <Route path="archive/stories" element={<StoryArchivePage />} />
           <Route path="create" element={<CreatePostPage />} />
           <Route path="create/story" element={<CreateStoryPage />} />
           <Route path="p/:shortcode" element={<PostPage />} />
           <Route path="accounts/edit" element={<EditProfilePage />} />
+          <Route path="accounts/settings" element={<SettingsPage />} />
+          <Route path="accounts/blocked" element={<RelationListPage kind="blocked" />} />
+          <Route path="accounts/restricted" element={<RelationListPage kind="restricted" />} />
+          <Route path="accounts/muted" element={<RelationListPage kind="muted" />} />
+          <Route path="accounts/close-friends" element={<PickListPage kind="close-friends" />} />
+          <Route path="accounts/favorites" element={<PickListPage kind="favorites" />} />
           <Route path="lab" element={<LabPage />} />
           <Route path=":username" element={<ProfilePage />} />
           <Route path=":username/saved/:id" element={<SavedCollectionPage />} />

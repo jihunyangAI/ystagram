@@ -59,6 +59,19 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("FORBIDDEN", "권한이 없습니다."));
     }
 
+    /**
+     * 브라우저가 영상(릴스)을 넘기거나 멈추면서 내려받기를 끊은 경우. 오류가 아니므로 기록·응답하지 않는다.
+     */
+    @ExceptionHandler({org.springframework.web.context.request.async.AsyncRequestNotUsableException.class,
+            java.io.IOException.class})
+    public void handleClientAbort(Exception e) throws Exception {
+        String msg = String.valueOf(e.getMessage());
+        boolean aborted = e instanceof org.springframework.web.context.request.async.AsyncRequestNotUsableException
+                || msg.contains("Connection reset") || msg.contains("Broken pipe") || msg.contains("연결")
+                || e.getClass().getSimpleName().equals("ClientAbortException");
+        if (!aborted) throw e; // 진짜 입출력 오류는 아래 handleUnknown이 처리하도록 다시 던진다
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnknown(Exception e) {
         // 잘못된 JSON(400), 없는 주소(404) 같은 Spring 표준 오류는 원래 상태 코드를 유지

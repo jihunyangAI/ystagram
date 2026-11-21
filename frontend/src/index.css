@@ -2,7 +2,7 @@
 
 /*
  * 디자인 토큰. 인스타그램의 그라데이션 대신 단색 포인트 컬러(딥 그린)를 쓴다.
- * 다크 모드는 시스템 설정을 따른다.
+ * 다크 모드는 시스템 설정을 따르거나, 설정 화면에서 직접 고를 수 있다.
  */
 :root {
   --bg: #ffffff;
@@ -21,8 +21,26 @@
   color-scheme: light;
 }
 
+/* 다크 모드: 설정 → 화면 테마에서 고르면 html[data-theme]이 붙고, "시스템 설정"이면 OS를 따른다 */
+:root[data-theme='dark'] {
+  --bg: #0b0d0c;
+  --surface: #121614;
+  --surface-2: #1b201e;
+  --text: #eef1ef;
+  --muted: #9aa39f;
+  --border: #262c29;
+  --primary: #3cc39c;
+  --primary-hover: #5ad3b0;
+  --primary-soft: #13312a;
+  --danger: #ff6b81;
+  --ring-unseen: #3cc39c;
+  --banner: #2b2510;
+  --banner-text: #f3d77a;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #0b0d0c;
     --surface: #121614;
     --surface-2: #1b201e;

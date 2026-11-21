@@ -70,7 +70,7 @@ public class DiscoverController {
                   and not exists (select 1 from follows f where f.follower_id = :me and f.following_id = a.id
                                   and f.status = 'ACCEPTED')
                   and %s
-                order by %s + case when p.type = 'REEL' then 0.4 else 0 end desc, p.id desc
+                order by %s desc, p.id desc
                 limit :limit offset :offset
                 """.formatted(RelationSql.notBlocked("a.id"), SCORE), params(me, EXPLORE_PAGE + 1, p * EXPLORE_PAGE),
                 (rs, i) -> PostQueries.gridItem(rs, me));

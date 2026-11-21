@@ -29,6 +29,10 @@ export function notificationVerb(type: NotificationPing['type']): string {
       return '회원님의 게시물을 리포스트했습니다.'
     case 'STORY_LIKE':
       return '회원님의 스토리를 좋아합니다.'
+    case 'TAG':
+      return '게시물에 회원님을 태그했습니다.'
+    case 'COLLAB_INVITE':
+      return '게시물 공동 작업에 회원님을 초대했습니다.'
   }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { CircleCheck, FlaskConical } from 'lucide-react'
@@ -15,7 +15,23 @@ import type { SuggestedUser } from '../lib/types'
 /** 홈: 팔로우한 사람들의 게시물(시간순) + 오른쪽 추천 계정 */
 export function HomePage() {
   const { data: me } = useMe()
-  const feed = useFeed()
+  // 홈 보기: 팔로잉(기본) / 즐겨찾기. 고른 것은 이 브라우저에 기억한다
+  const [mode, setMode] = useState<'following' | 'favorites'>(() => {
+    try {
+      return localStorage.getItem('yangstagram:feed') === 'favorites' ? 'favorites' : 'following'
+    } catch {
+      return 'following'
+    }
+  })
+  const feed = useFeed(mode)
+  const chooseMode = (m: 'following' | 'favorites') => {
+    setMode(m)
+    try {
+      localStorage.setItem('yangstagram:feed', m)
+    } catch {
+      /* 저장 실패는 무시 */
+    }
+  }
   const sentinel = useRef<HTMLDivElement>(null)
 
   // 화면 끝에 닿으면 다음 페이지
@@ -39,9 +55,22 @@ export function HomePage() {
     <div className="mx-auto flex w-full max-w-[935px] justify-center gap-16 md:pt-6">
       <div className="w-full max-w-[470px]">
         <StoryTray />
+        <div role="tablist" aria-label="홈 보기" className="flex gap-2 px-3 py-2 md:px-0">
+          {([['following', '팔로잉'], ['favorites', '즐겨찾기 ★']] as const).map(([m, label]) => (
+            <button
+              key={m}
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => chooseMode(m)}
+              className={'rounded-full border px-3 py-1 text-sm ' + (mode === m ? 'border-text bg-text font-semibold text-bg' : 'border-border')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {feed.isLoading && <FeedSkeleton />}
         {feed.isError && <p className="p-10 text-center text-sm text-danger">피드를 불러오지 못했습니다. {feed.error.message}</p>}
-        {feed.isSuccess && posts.length === 0 && <EmptyFeed />}
+        {feed.isSuccess && posts.length === 0 && (mode === 'favorites' ? <EmptyFavorites /> : <EmptyFeed />)}
 
         <div className="flex flex-col gap-2 md:gap-4">
           {posts.map((post) => (
@@ -145,6 +174,18 @@ function FeedSkeleton({ count = 2 }: { count?: number }) {
           <div className="mt-3 h-3 w-24 rounded bg-surface-2" />
         </div>
       ))}
+    </div>
+  )
+}
+
+function EmptyFavorites() {
+  return (
+    <div className="px-6 py-16 text-center">
+      <p className="text-lg font-bold">즐겨찾기한 사람이 없습니다</p>
+      <p className="mt-1 text-sm text-muted">즐겨찾기에 추가한 사람(최대 50명)의 게시물만 여기에 모아 볼 수 있습니다.</p>
+      <Link to="/accounts/favorites" className="mt-3 inline-block text-sm font-semibold text-primary">
+        즐겨찾기 추가하기
+      </Link>
     </div>
   )
 }

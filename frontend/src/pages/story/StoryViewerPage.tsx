@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Eye, Heart, MoreHorizontal, Send, X } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
+import { StickerLayer } from '../../components/story/StickerView'
 import { ConfirmModal, Modal, SheetButton } from '../../components/Modal'
 import { toast } from '../../components/Toast'
 import { timeAgo } from '../../lib/format'
@@ -17,12 +18,15 @@ const DURATION = 5000
  * 진행 바 · 왼쪽/오른쪽 탭으로 이전/다음 · 길게 누르면 멈춤 · 끝나면 트레이의 다음 사람으로.
  */
 export function StoryViewerPage() {
-  const { username = '' } = useParams()
+  // /stories/:username (활성 스토리) 또는 /stories/highlights/:id (하이라이트)
+  const { username: routeUser = '', id: highlightId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const qc = useQueryClient()
   const queue = ((location.state as { queue?: string[] } | null)?.queue ?? []) as string[]
-  const { data: stories, isLoading, isError } = useUserStories(username)
+  const { data: stories, isLoading, isError } = useUserStories(routeUser, highlightId)
+  const username = highlightId ? (stories?.[0]?.author.username ?? '') : routeUser
+  const storiesKey = highlightId ? ['highlight-stories', highlightId] : ['stories', routeUser]
 
   const [index, setIndex] = useState(0)
   const [progress, setProgress] = useState(0)
@@ -43,11 +47,12 @@ export function StoryViewerPage() {
   }, [qc, navigate, location.key])
 
   const nextUser = useCallback(() => {
+    if (highlightId) return close()
     const at = queue.indexOf(username)
     const next = at >= 0 ? queue[at + 1] : undefined
     if (next) navigate(`/stories/${next}`, { replace: true, state: { queue } })
     else close()
-  }, [queue, username, navigate, close])
+  }, [queue, username, navigate, close, highlightId])
 
   const prevUser = useCallback(() => {
     const at = queue.indexOf(username)
@@ -60,10 +65,11 @@ export function StoryViewerPage() {
     started.current = false
     setIndex(0)
     setProgress(0)
-  }, [username])
+  }, [routeUser, highlightId])
   useEffect(() => {
     if (stories && !started.current) {
       started.current = true
+      if (highlightId) return // 하이라이트는 처음부터
       const firstUnseen = stories.findIndex((s) => !s.seen && !s.mine)
       setIndex(firstUnseen > 0 ? firstUnseen : 0)
     }
@@ -86,8 +92,18 @@ export function StoryViewerPage() {
 
   // 본 것으로 기록 (내 스토리는 제외)
   useEffect(() => {
-    if (story && !story.mine && !story.seen) void storyApi.view(story.id).catch(() => undefined)
+    if (story && !story.mine && !story.seen && !story.expired) void storyApi.view(story.id).catch(() => undefined)
   }, [story])
+
+  /** 스티커 응답 → 결과가 붙은 스토리로 바꿔 끼운다 */
+  const respond = (stickerId: string, value: string) => {
+    if (!story) return
+    storyApi.respond(story.id, stickerId, value).then(
+      (updated) =>
+        qc.setQueryData<typeof stories>(storiesKey, (list) => list?.map((x) => (x.id === updated.id ? updated : x))),
+      (e: Error) => toast(e.message),
+    )
+  }
 
   // 진행 바 (멈췄다가 다시 시작하면 이어서)
   const progressRef = useRef(0)
@@ -208,7 +224,10 @@ export function StoryViewerPage() {
                 <Avatar user={story.author} size={32} />
                 <span className="truncate text-sm font-semibold">{story.author.username}</span>
               </Link>
-              <span className="text-sm text-white/70">{timeAgo(story.createdAt)}</span>
+              <span className="text-sm text-white/70">{highlightId ? new Date(story.createdAt).toLocaleDateString('ko-KR') : timeAgo(story.createdAt)}</span>
+              {story.audience === 'CLOSE_FRIENDS' && (
+                <span className="rounded-full bg-[#1fc25b] px-2 py-0.5 text-[11px] font-semibold text-white">친한 친구</span>
+              )}
               <span className="flex-1" />
               {story.mine && (
                 <button aria-label="옵션" className="p-1" onClick={() => setModal('menu')}>
@@ -228,9 +247,18 @@ export function StoryViewerPage() {
               onPointerLeave={() => setHeld(false)}
             />
 
+            {/* 스티커 (탭 영역보다 위) */}
+            <StickerLayer
+              stickers={story.stickers}
+              results={story.results}
+              mine={story.mine}
+              onRespond={story.expired ? undefined : respond}
+              onFocusChange={setTyping}
+            />
+
             {/* 아래 */}
             <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/50 to-transparent px-3 pt-8 pb-4">
-              {story.mine ? (
+              {highlightId && !story.mine ? null : story.mine ? (
                 <button onClick={() => setModal('viewers')} className="flex items-center gap-2 text-sm font-semibold text-white">
                   <Eye size={20} /> 활동 {story.viewerCount ?? 0}
                 </button>

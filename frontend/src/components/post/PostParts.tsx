@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Heart, MessageCircle, MoreHorizontal, Pin, Repeat2, Send, Trash2, X } from 'lucide-react'
 import clsx from 'clsx'
+import { useMe } from '../../lib/auth'
 import { nowMs } from '../../lib/clock'
 import { formatCount, fullDate, timeAgo } from '../../lib/format'
-import { useAddComment, useDeleteComment, useDeletePost, useToggleFollow, useToggleLike } from '../../lib/posts'
+import { useQueryClient } from '@tanstack/react-query'
+import { api } from '../../lib/api'
+import { patchPost, useAddComment, useDeleteComment, useDeletePost, useToggleFollow, useToggleLike } from '../../lib/posts'
 import { useCommentActions, useReplies, useToggleRepost } from '../../lib/social'
 import type { CommentView, PostView } from '../../lib/types'
 import { Avatar } from '../Avatar'
@@ -49,6 +52,15 @@ export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => voi
               {post.author.username}
             </Link>
             <UserBadges user={{ verified: post.author.verified, isPrivate: false }} size={13} />
+            {post.collaborators.length > 0 && (
+              <span className="truncate">
+                <span className="text-muted"> 및 </span>
+                <Link to={`/${post.collaborators[0].username}`} className="font-semibold">
+                  {post.collaborators[0].username}
+                </Link>
+                {post.collaborators.length > 1 && <span className="text-muted"> 외 {post.collaborators.length - 1}명</span>}
+              </span>
+            )}
             <span className="text-muted">·</span>
             <Link to={`/p/${post.shortcode}`} className="shrink-0 text-muted" title={fullDate(post.createdAt)}>
               <time dateTime={post.createdAt}>{timeAgo(post.createdAt)}</time>
@@ -77,6 +89,36 @@ export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => voi
         </button>
       </header>
     </>
+  )
+}
+
+/** 공동 작업 초대를 받은 게시물: 수락하면 내 프로필과 내 팔로워 피드에도 보인다 */
+export function CollabInviteBar({ post }: { post: PostView }) {
+  const qc = useQueryClient()
+  const [pending, setPending] = useState(false)
+  if (!post.collabInvite) return null
+  const answer = (accept: boolean) => {
+    setPending(true)
+    ;(accept ? api.put<PostView>(`/api/posts/${post.shortcode}/collab`) : api.delete<PostView>(`/api/posts/${post.shortcode}/collab`))
+      .then((p) => {
+        patchPost(qc, post.shortcode, () => p)
+        qc.invalidateQueries({ queryKey: ['grid'] })
+        toast(accept ? '공동 작업을 수락했습니다. 내 프로필에도 표시됩니다' : '초대를 거절했습니다')
+      }, (e: Error) => toast(e.message))
+      .finally(() => setPending(false))
+  }
+  return (
+    <div className="mx-3 mb-2 flex items-center gap-3 rounded-lg bg-primary-soft px-3 py-2 text-sm md:mx-0">
+      <span className="min-w-0 flex-1">
+        <b>{post.author.username}</b>님이 이 게시물의 공동 작업자로 초대했습니다
+      </span>
+      <button disabled={pending} onClick={() => answer(false)} className="text-muted">
+        거절
+      </button>
+      <button disabled={pending} onClick={() => answer(true)} className="font-semibold text-primary">
+        수락
+      </button>
+    </div>
   )
 }
 
@@ -312,6 +354,7 @@ export function CommentItem({
 }) {
   const remove = useDeleteComment(shortcode)
   const actions = useCommentActions(shortcode)
+  const { data: me } = useMe()
   const [confirm, setConfirm] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(comment.body)
@@ -349,6 +392,19 @@ export function CommentItem({
           {comment.pinned && (
             <p className="mb-0.5 flex items-center gap-1 text-xs text-muted">
               <Pin size={12} /> 고정됨
+            </p>
+          )}
+          {comment.restricted && (
+            <p className="mb-0.5 flex items-center gap-2 text-xs text-muted">
+              {me?.user.id === comment.author.id ? '회원님과 게시물 주인에게만 보이는 댓글입니다' : '제한된 계정의 댓글 · 다른 사람에게 보이지 않음'}
+              {me?.user.id !== comment.author.id && comment.canDelete && (
+                <button
+                  className="font-semibold text-primary"
+                  onClick={() => actions.approve(comment).then(() => toast('댓글을 승인했습니다'), (e: Error) => toast(e.message))}
+                >
+                  승인
+                </button>
+              )}
             </p>
           )}
           {editing ? (

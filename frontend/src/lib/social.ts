@@ -252,6 +252,11 @@ export function useCommentActions(shortcode: string) {
       (pin ? api.put<CommentView>(`/api/comments/${c.id}/pin`) : api.delete<CommentView>(`/api/comments/${c.id}/pin`)).then(
         () => qc.invalidateQueries({ queryKey: ['comments', shortcode] }),
       ),
+    /** 제한한 사람의 댓글 승인 (게시물 주인) */
+    approve: (c: CommentView) =>
+      api.put<CommentView>(`/api/comments/${c.id}/approve`).then(() =>
+        patchComment(qc, shortcode, c.id, (x) => ({ ...x, restricted: false })),
+      ),
     reply: (parentId: number, body: string) =>
       api.post<CommentView>(`/api/posts/${shortcode}/comments`, { body, parentId }).then((reply) => {
         qc.setQueryData<CommentView[]>(['replies', parentId], (list) => (list ? [...list, reply] : list))

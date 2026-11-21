@@ -39,9 +39,21 @@ export interface Profile {
   canViewContent: boolean
   /** 프로필 사진 둘레 스토리 링 */
   story: StoryRing
+  /** 내가 이 사람에게 건 설정 */
+  flags: RelationFlags
 }
 
-export type StoryRing = 'NONE' | 'UNSEEN' | 'SEEN'
+/** CLOSE_FRIENDS: 안 본 친한 친구 공개 스토리가 있음 (초록 링) */
+export type StoryRing = 'NONE' | 'UNSEEN' | 'CLOSE_FRIENDS' | 'SEEN'
+
+export interface RelationFlags {
+  blocked: boolean
+  restricted: boolean
+  mutedPosts: boolean
+  mutedStories: boolean
+  closeFriend: boolean
+  favorite: boolean
+}
 
 export interface EditableProfile {
   me: Me
@@ -68,10 +80,20 @@ export interface Slice<T> {
 
 export interface MediaView {
   url: string
+  /** 영상이면 첫 화면 사진 */
   thumbUrl: string
   width: number
   height: number
   altText: string | null
+  type: 'IMAGE' | 'VIDEO'
+  durationMs: number | null
+}
+
+export interface TagView {
+  user: UserSummary
+  mediaIndex: number
+  x: number
+  y: number
 }
 
 export interface CommentView {
@@ -90,6 +112,8 @@ export interface CommentView {
   likeCount: number
   likedByMe: boolean
   replyCount: number
+  /** 제한한 사람의 댓글 (게시물 주인이 승인하면 공개) */
+  restricted: boolean
 }
 
 export interface PostView {
@@ -116,6 +140,13 @@ export interface PostView {
   /** 팔로우하는 사람의 리포스트로 피드에 들어온 경우 */
   repost: { by: UserSummary; note: string | null; createdAt: string } | null
   authorStory: StoryRing
+  type: 'PHOTO' | 'CAROUSEL' | 'REEL'
+  viewCount: number
+  tags: TagView[]
+  /** 수락한 공동 작업자 */
+  collaborators: UserSummary[]
+  /** 내가 공동 작업 초대를 받았고 아직 답하지 않음 */
+  collabInvite: boolean
 }
 
 export interface GridItem {
@@ -124,6 +155,8 @@ export interface GridItem {
   mediaCount: number
   likeCount: number | null
   commentCount: number
+  type: 'PHOTO' | 'CAROUSEL' | 'REEL'
+  viewCount: number
 }
 
 export interface LikeResult {
@@ -175,6 +208,7 @@ export interface SeedResult {
   posts: number
   likes: number
   comments: number
+  reels: number
   stories: number
   conversations: number
   messages: number
@@ -195,6 +229,8 @@ export type NotificationType =
   | 'FOLLOW_ACCEPTED'
   | 'REPOST'
   | 'STORY_LIKE'
+  | 'TAG'
+  | 'COLLAB_INVITE'
 
 export interface ActivityItem {
   id: number
@@ -390,6 +426,46 @@ export interface StoryView {
   mine: boolean
   viewerCount: number | null
   expired: boolean
+  audience: 'PUBLIC' | 'CLOSE_FRIENDS'
+  stickers: Sticker[]
+  results: StickerResult[]
+}
+
+export type StickerType = 'POLL' | 'QUIZ' | 'SLIDER' | 'QUESTION' | 'MENTION' | 'HASHTAG' | 'LOCATION' | 'LINK' | 'COUNTDOWN'
+
+/** 스토리 스티커. x·y는 화면 대비 0~1 (가운데 기준) */
+export interface Sticker {
+  id: string
+  type: StickerType
+  x: number
+  y: number
+  question?: string | null
+  options?: string[] | null
+  answer?: number | null
+  emoji?: string | null
+  username?: string | null
+  tag?: string | null
+  name?: string | null
+  url?: string | null
+  label?: string | null
+  endsAt?: string | null
+}
+
+/** 응답 집계. counts·average는 응답했거나 주인일 때만 */
+export interface StickerResult {
+  stickerId: string
+  counts: number[] | null
+  myValue: string | null
+  average: number | null
+  total: number
+  answers: { username: string; value: string }[] | null
+}
+
+export interface HighlightView {
+  id: number
+  title: string
+  coverUrl: string | null
+  count: number
 }
 
 export interface StoryViewer {

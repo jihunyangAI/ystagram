@@ -5,10 +5,12 @@ import type { CommentView, LikeResult, PostView, Relationship, Slice } from './t
 
 // ------------------------------------------------------------ 조회
 
-export function useFeed() {
+/** mode: following(팔로잉·리포스트) / favorites(즐겨찾기한 사람만) */
+export function useFeed(mode: 'following' | 'favorites' = 'following') {
   return useInfiniteQuery({
-    queryKey: ['feed'],
-    queryFn: ({ pageParam }) => api.get<Slice<PostView>>(`/api/feed${pageParam ? `?cursor=${pageParam}` : ''}`),
+    queryKey: ['feed', mode],
+    queryFn: ({ pageParam }) =>
+      api.get<Slice<PostView>>(`/api/feed?mode=${mode}${pageParam ? `&cursor=${pageParam}` : ''}`),
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   })
@@ -37,7 +39,7 @@ export function useComments(shortcode: string, enabled = true) {
 /** 피드·상세에 들어 있는 같은 게시물을 한꺼번에 고친다 (좋아요 등을 누르자마자 반영) */
 export function patchPost(qc: QueryClient, shortcode: string, update: (p: PostView) => PostView) {
   qc.setQueryData<PostView>(['post', shortcode], (p) => (p ? update(p) : p))
-  qc.setQueryData<InfiniteData<Slice<PostView>>>(['feed'], (data) =>
+  qc.setQueriesData<InfiniteData<{ items: PostView[] }>>({ queryKey: ['feed'] }, (data) =>
     data
       ? {
           ...data,
@@ -52,7 +54,7 @@ export function patchPost(qc: QueryClient, shortcode: string, update: (p: PostVi
 
 function removePost(qc: QueryClient, shortcode: string) {
   qc.removeQueries({ queryKey: ['post', shortcode] })
-  qc.setQueryData<InfiniteData<Slice<PostView>>>(['feed'], (data) =>
+  qc.setQueriesData<InfiniteData<{ items: PostView[] }>>({ queryKey: ['feed'] }, (data) =>
     data
       ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.filter((p) => p.shortcode !== shortcode) })) }
       : data,
@@ -169,7 +171,7 @@ export function useToggleFollow() {
         : api.delete<{ relationship: Relationship }>(`/api/users/${username}/follow`),
     onSuccess: (res, { username }) => {
       // 피드 카드의 작성자 관계도 바꿔 준다
-      qc.setQueryData<InfiniteData<Slice<PostView>>>(['feed'], (data) =>
+      qc.setQueriesData<InfiniteData<{ items: PostView[] }>>({ queryKey: ['feed'] }, (data) =>
         data
           ? {
               ...data,

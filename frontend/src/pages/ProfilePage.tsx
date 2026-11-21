@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
-import { Bookmark, Camera, Clapperboard, Copy, Grid3x3, Link2, Lock, Menu, Repeat2, SquareUser, UserPlus } from 'lucide-react'
+import { Ban, Bookmark, Camera, Clapperboard, Grid3x3, Link2, Lock, Menu, MoreHorizontal, Repeat2, Settings, SquareUser, UserPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import type { LucideIcon } from 'lucide-react'
 import { UserBadges } from '../components/UserBadges'
 import { toast } from '../components/Toast'
 import { InfiniteGrid } from '../components/post/Grid'
+import { HighlightsRow } from '../components/story/Highlights'
 import { StoryRingAvatar } from '../components/story/StoryRingAvatar'
+import { ProfileMenu } from '../components/user/ProfileMenu'
+import { useRelationAction } from '../lib/relations'
 import { FollowButton } from '../components/user/FollowButton'
 import { UserListModal } from '../components/user/UserListModal'
 import { api, ApiError } from '../lib/api'
@@ -21,10 +24,10 @@ type TabKey = 'posts' | 'reels' | 'reposts' | 'saved' | 'tagged'
 
 const TABS: { key: TabKey; label: string; icon: LucideIcon; stage?: string; meOnly?: boolean }[] = [
   { key: 'posts', label: '게시물', icon: Grid3x3 },
-  { key: 'reels', label: '릴스', icon: Clapperboard, stage: 'M3' },
+  { key: 'reels', label: '릴스', icon: Clapperboard },
   { key: 'reposts', label: '리포스트', icon: Repeat2 },
   { key: 'saved', label: '저장됨', icon: Bookmark, meOnly: true },
-  { key: 'tagged', label: '태그됨', icon: SquareUser, stage: 'M3' },
+  { key: 'tagged', label: '태그됨', icon: SquareUser },
 ]
 
 type ListKind = 'followers' | 'following' | null
@@ -35,6 +38,8 @@ export function ProfilePage() {
   const [tab, setTab] = useState<TabKey>('posts')
   const [list, setList] = useState<ListKind>(null)
   const [opening, setOpening] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const relation = useRelationAction()
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ['profile', username],
     queryFn: () => api.get<Profile>(`/api/users/${encodeURIComponent(username)}`),
@@ -62,13 +67,6 @@ export function ProfilePage() {
     { label: '팔로잉', value: profile.followingCount, kind: 'following' },
   ]
 
-  const shareProfile = () => {
-    const url = `${window.location.origin}/${user.username}`
-    navigator.clipboard?.writeText(url).then(
-      () => toast('프로필 링크를 복사했습니다'),
-      () => toast(url),
-    )
-  }
 
   const message = () => {
     setOpening(true)
@@ -77,13 +75,26 @@ export function ProfilePage() {
       .finally(() => setOpening(false))
   }
 
-  const actions = profile.me ? (
+  const blockedActions = (
+    <button
+      className="btn btn-secondary flex-1 md:flex-none"
+      disabled={relation.isPending}
+      onClick={() => relation.mutate({ username: user.username, action: { op: 'block', on: false } })}
+    >
+      차단 해제
+    </button>
+  )
+
+  const actions = profile.flags.blocked ? blockedActions : profile.me ? (
     <>
       <Link to="/accounts/edit" className="btn btn-secondary flex-1 md:flex-none">
         프로필 편집
       </Link>
       <Link to="/archive/stories" className="btn btn-secondary flex-1 md:flex-none">
         보관함 보기
+      </Link>
+      <Link to="/accounts/settings" className="btn btn-secondary hidden md:flex md:flex-none" aria-label="설정">
+        <Settings size={18} />
       </Link>
       {user.isPrivate && (
         <Link to="/notifications/requests" className="btn btn-secondary relative md:flex-none" aria-label="팔로우 요청">
@@ -107,6 +118,9 @@ export function ProfilePage() {
       <button className="btn btn-secondary flex-1 md:flex-none" disabled={opening} onClick={message}>
         메시지
       </button>
+      <button className="btn btn-secondary md:flex-none" aria-label="옵션" onClick={() => setMenu(true)}>
+        <MoreHorizontal size={18} />
+      </button>
     </>
   )
 
@@ -124,9 +138,15 @@ export function ProfilePage() {
           {user.username}
           {user.verified && <UserBadges user={{ verified: true, isPrivate: false }} />}
         </h1>
-        <button aria-label="프로필 링크 복사" onClick={shareProfile}>
-          {profile.me ? <Menu size={24} /> : <Copy size={20} />}
-        </button>
+        {profile.me ? (
+          <Link to="/accounts/settings" aria-label="설정">
+            <Menu size={24} />
+          </Link>
+        ) : (
+          <button aria-label="옵션" onClick={() => setMenu(true)}>
+            <MoreHorizontal size={22} />
+          </button>
+        )}
       </header>
 
       {/* 프로필 헤더 */}
@@ -185,7 +205,17 @@ export function ProfilePage() {
         <div className="mt-4 flex gap-2 md:hidden">{actions}</div>
       </section>
 
-      {locked ? (
+      <HighlightsRow username={user.username} mine={profile.me} enabled={!locked} />
+
+      {profile.flags.blocked ? (
+        <div className="mt-8 border-t border-border px-6 py-14 text-center">
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-text">
+            <Ban size={28} strokeWidth={1.5} />
+          </span>
+          <p className="mt-4 font-semibold">차단한 계정입니다</p>
+          <p className="mt-1 text-sm text-muted">차단을 해제하면 이 사람의 게시물을 다시 볼 수 있습니다. 팔로우는 다시 해야 합니다.</p>
+        </div>
+      ) : locked ? (
         <div className="mt-8 border-t border-border px-6 py-14 text-center">
           <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-text">
             <Lock size={28} strokeWidth={1.5} />
@@ -238,14 +268,31 @@ export function ProfilePage() {
             />
           )}
           {tab === 'saved' && profile.me && <SavedTab username={user.username} />}
-          {(tab === 'reels' || tab === 'tagged') && (
-            <div className="px-6 py-16 text-center text-sm text-muted">
-              {TABS.find((t) => t.key === tab)?.label} 탭은 {TABS.find((t) => t.key === tab)?.stage} 단계에서 추가됩니다.
-            </div>
+          {tab === 'reels' && (
+            <InfiniteGrid
+              queryKey={['reels', user.username]}
+              url={`/api/users/${user.username}/reels`}
+              variant="reels"
+              empty={<EmptyTab icon={Clapperboard} title="릴스" text={profile.me ? '릴스를 만들면 여기에 표시됩니다.' : '아직 릴스가 없습니다.'} />}
+            />
+          )}
+          {tab === 'tagged' && (
+            <InfiniteGrid
+              queryKey={['tagged', user.username]}
+              url={`/api/users/${user.username}/tagged`}
+              empty={
+                <EmptyTab
+                  icon={SquareUser}
+                  title="내가 나온 사진"
+                  text={profile.me ? '사람들이 회원님을 사진에 태그하면 여기에 표시됩니다.' : '아직 태그된 사진이 없습니다.'}
+                />
+              }
+            />
           )}
         </>
       )}
 
+      {!profile.me && <ProfileMenu profile={profile} open={menu} onClose={() => setMenu(false)} />}
       <UserListModal
         open={list === 'followers'}
         onClose={() => setList(null)}

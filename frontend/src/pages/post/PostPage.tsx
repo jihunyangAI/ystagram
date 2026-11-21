@@ -4,7 +4,7 @@ import { ChevronLeft, Lock } from 'lucide-react'
 import { Avatar } from '../../components/Avatar'
 import { EditPostModal } from '../../components/post/EditPostModal'
 import { CarouselDots, MediaCarousel } from '../../components/post/MediaCarousel'
-import { CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from '../../components/post/PostParts'
+import { CollabInviteBar, CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from '../../components/post/PostParts'
 import type { ReplyTarget } from '../../components/post/PostParts'
 import { RichText } from '../../components/post/RichText'
 import { ApiError } from '../../lib/api'
@@ -81,6 +81,7 @@ function PostDetail({ post }: { post: PostView }) {
       <div className="flex items-center bg-black md:w-[58%] md:shrink-0">
         <MediaCarousel
           media={post.media}
+          tags={post.tags}
           fit
           onIndexChange={setIndex}
           onDoubleTap={() => !post.likedByMe && like.mutate({ post, like: true })}
@@ -93,6 +94,10 @@ function PostDetail({ post }: { post: PostView }) {
         </div>
         <div className="hidden border-b border-border px-4 md:block">
           <PostHeader post={post} onMenu={() => setMenu(true)} />
+        </div>
+
+        <div className="pt-2">
+          <CollabInviteBar post={post} />
         </div>
 
         {/* 캡션 + 댓글 */}

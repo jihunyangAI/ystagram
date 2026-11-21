@@ -212,9 +212,13 @@ function PrivacySection() {
     },
     onError: (e) => toast(e.message),
   })
+  // 설정 → "계정 공개 범위"로 들어오면 이 칸으로 내려간다
+  useEffect(() => {
+    if (data && window.location.hash === '#privacy') document.getElementById('privacy')?.scrollIntoView()
+  }, [data])
   if (!data) return null
   return (
-    <section className="mt-10 border-t border-border pt-6">
+    <section id="privacy" className="mt-10 scroll-mt-16 border-t border-border pt-6">
       <h2 className="mb-4 text-lg font-bold">계정 공개 범위</h2>
       <Toggle
         checked={data.isPrivate}

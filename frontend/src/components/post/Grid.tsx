@@ -1,25 +1,40 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import { Copy, Heart, MessageCircle } from 'lucide-react'
+import { Clapperboard, Copy, Heart, MessageCircle, Play } from 'lucide-react'
+import clsx from 'clsx'
 import { formatCount } from '../../lib/format'
 import { useGrid } from '../../lib/social'
 import type { GridItem } from '../../lib/types'
 
-/** 3:4 그리드 칸들 (프로필·리포스트·저장됨·해시태그·장소 공통) */
-export function GridTiles({ items }: { items: GridItem[] }) {
+/**
+ * 그리드 칸들 (프로필·리포스트·저장됨·해시태그·장소 공통).
+ * variant="reels": 9:16 칸에 조회수 (프로필 릴스 탭)
+ */
+export function GridTiles({ items, variant = 'posts' }: { items: GridItem[]; variant?: 'posts' | 'reels' }) {
   return (
     <div className="grid grid-cols-3 gap-0.5 md:gap-1">
       {items.map((it) => (
         <Link
           key={it.shortcode}
-          to={`/p/${it.shortcode}`}
-          className="group relative block aspect-[3/4] overflow-hidden bg-surface-2"
-          aria-label={`게시물 보기${it.mediaCount > 1 ? ` (사진 ${it.mediaCount}장)` : ''}`}
+          to={it.type === 'REEL' && variant === 'reels' ? `/reels/${it.shortcode}` : `/p/${it.shortcode}`}
+          className={clsx(
+            'group relative block overflow-hidden bg-surface-2',
+            variant === 'reels' ? 'aspect-[9/16]' : 'aspect-[3/4]',
+          )}
+          aria-label={`${it.type === 'REEL' ? '릴스' : '게시물'} 보기${it.mediaCount > 1 ? ` (사진 ${it.mediaCount}장)` : ''}`}
         >
           <img src={it.thumbUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-          {it.mediaCount > 1 && (
+          {it.type === 'REEL' && variant !== 'reels' && (
+            <Clapperboard size={18} className="absolute top-2 right-2 text-white drop-shadow" aria-hidden />
+          )}
+          {it.type !== 'REEL' && it.mediaCount > 1 && (
             <Copy size={18} className="absolute top-2 right-2 rotate-180 text-white drop-shadow" aria-hidden />
+          )}
+          {variant === 'reels' && (
+            <span className="absolute bottom-2 left-2 flex items-center gap-1 text-sm font-semibold text-white drop-shadow">
+              <Play size={14} className="fill-white" /> {formatCount(it.viewCount)}
+            </span>
           )}
           <div className="absolute inset-0 hidden items-center justify-center gap-6 bg-black/35 font-bold text-white group-hover:flex">
             {it.likeCount !== null && (
@@ -38,7 +53,17 @@ export function GridTiles({ items }: { items: GridItem[] }) {
 }
 
 /** 끝까지 내리면 다음 12칸을 불러오는 그리드 */
-export function InfiniteGrid({ queryKey, url, empty }: { queryKey: unknown[]; url: string; empty: ReactNode }) {
+export function InfiniteGrid({
+  queryKey,
+  url,
+  empty,
+  variant,
+}: {
+  queryKey: unknown[]
+  url: string
+  empty: ReactNode
+  variant?: 'posts' | 'reels'
+}) {
   const query = useGrid(queryKey, url)
   const sentinel = useRef<HTMLDivElement>(null)
 
@@ -61,7 +86,7 @@ export function InfiniteGrid({ queryKey, url, empty }: { queryKey: unknown[]; ur
     return (
       <div className="grid grid-cols-3 gap-0.5" aria-hidden>
         {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="aspect-[3/4] animate-pulse bg-surface-2" />
+          <div key={i} className={clsx('animate-pulse bg-surface-2', variant === 'reels' ? 'aspect-[9/16]' : 'aspect-[3/4]')} />
         ))}
       </div>
     )
@@ -71,7 +96,7 @@ export function InfiniteGrid({ queryKey, url, empty }: { queryKey: unknown[]; ur
 
   return (
     <>
-      <GridTiles items={items} />
+      <GridTiles items={items} variant={variant} />
       <div ref={sentinel} className="h-4" />
       {query.isFetchingNextPage && <p className="py-4 text-center text-xs text-muted">불러오는 중…</p>}
     </>

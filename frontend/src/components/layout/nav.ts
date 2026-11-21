@@ -22,5 +22,5 @@ export const BOTTOM_ITEMS: NavItem[] = [
   { to: '/', label: '홈', icon: House },
   { to: '/reels', label: '릴스', icon: Clapperboard },
   { to: '/direct/inbox', label: '메시지', icon: Send },
-  { to: '/explore/search', label: '검색', icon: Search },
+  { to: '/explore', label: '검색', icon: Search },
 ]

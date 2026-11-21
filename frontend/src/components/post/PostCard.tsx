@@ -4,7 +4,7 @@ import { useToggleLike } from '../../lib/posts'
 import type { PostView } from '../../lib/types'
 import { EditPostModal } from './EditPostModal'
 import { CarouselDots, MediaCarousel } from './MediaCarousel'
-import { Caption, CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from './PostParts'
+import { Caption, CollabInviteBar, CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from './PostParts'
 
 /** 홈 피드의 게시물 카드: 머리 · 사진 · 액션 · 좋아요 · 캡션 · 댓글 미리보기 · 댓글 입력 */
 export function PostCard({ post }: { post: PostView }) {
@@ -17,8 +17,10 @@ export function PostCard({ post }: { post: PostView }) {
   return (
     <article className="border-b border-border pb-4 md:pb-5" aria-label={`${post.author.username}님의 게시물`}>
       <PostHeader post={post} onMenu={() => setMenu(true)} />
+      <CollabInviteBar post={post} />
       <MediaCarousel
         media={post.media}
+        tags={post.tags}
         className="md:rounded-md md:border md:border-border"
         onIndexChange={setIndex}
         // 더블탭은 좋아요만 한다 (이미 눌렀으면 그대로)
