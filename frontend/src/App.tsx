@@ -11,6 +11,9 @@ import { LabSimulatorPage } from './pages/lab/LabSimulatorPage'
 import { InsightsPage, PostInsightsPage } from './pages/insights/InsightsPage'
 import { AlgorithmPage } from './pages/settings/AlgorithmPage'
 import { ScheduledPage } from './pages/settings/ScheduledPage'
+import { ReportsPage, TwoFactorPage } from './pages/settings/SecurityPages'
+import { LabModerationPage } from './pages/lab/LabModerationPage'
+import { MapPage } from './pages/direct/MapPage'
 import { LabAdsPage } from './pages/lab/LabAdsPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -48,6 +51,9 @@ export default function App() {
           <Route path="create/reel" element={<CreateReelPage />} />
           <Route path="direct/inbox" element={<DirectPage />} />
           <Route path="direct/t/:id" element={<DirectPage />} />
+          <Route path="direct/channel/:channelId" element={<DirectPage />} />
+          <Route path="direct/blend/:blendId" element={<DirectPage />} />
+          <Route path="direct/map" element={<MapPage />} />
           <Route path="explore" element={<ExplorePage />} />
           <Route path="explore/search" element={<SearchPage />} />
           <Route path="explore/tags/:tag" element={<TagPage />} />
@@ -76,6 +82,9 @@ export default function App() {
           <Route path="p/:shortcode/insights" element={<PostInsightsPage />} />
           <Route path="accounts/algorithm" element={<AlgorithmPage />} />
           <Route path="accounts/scheduled" element={<ScheduledPage />} />
+          <Route path="accounts/two-factor" element={<TwoFactorPage />} />
+          <Route path="accounts/reports" element={<ReportsPage />} />
+          <Route path="lab/moderation" element={<LabModerationPage />} />
           <Route path="lab/ads" element={<LabAdsPage />} />
           <Route path=":username" element={<ProfilePage />} />
           <Route path=":username/saved/:id" element={<SavedCollectionPage />} />

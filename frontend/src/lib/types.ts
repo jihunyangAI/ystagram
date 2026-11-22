@@ -398,7 +398,7 @@ export interface SavedOverview {
 
 export type DmFolder = 'PRIMARY' | 'GENERAL' | 'REQUEST'
 
-export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY'
+export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY' | 'BLEND_INVITE'
 
 export interface InboxItem {
   id: number
@@ -459,6 +459,8 @@ export interface MessageView {
   canEdit: boolean
   /** 노트 답장이면 원래 노트 문구 */
   quote: string | null
+  /** Blend 초대 메시지 */
+  blend: { id: number; status: 'PENDING' | 'ACTIVE' } | null
 }
 
 export interface ScheduledMessage {

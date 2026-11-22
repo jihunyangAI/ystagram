@@ -9,7 +9,9 @@ import {
   ChevronRight,
   CircleUserRound,
   EyeOff,
+  Flag,
   FlaskConical,
+  KeyRound,
   Lock,
   LogOut,
   MessageSquareOff,
@@ -71,6 +73,7 @@ export function SettingsPage() {
       items: [
         { to: '/accounts/edit', label: '프로필 편집', icon: CircleUserRound },
         { to: '/accounts/edit#privacy', label: '계정 공개 범위', icon: Lock, hint: '비공개 계정·팔로우 요청' },
+        { to: '/accounts/two-factor', label: '2단계 인증', icon: KeyRound, hint: '로그인할 때 인증 앱 코드도 확인' },
       ],
     },
     {
@@ -95,6 +98,10 @@ export function SettingsPage() {
         { to: '/accounts/restricted', label: '제한된 계정', icon: MessageSquareOff, hint: '댓글은 승인해야 공개, DM은 요청함으로' },
         { to: '/accounts/muted', label: '숨긴 계정', icon: EyeOff, hint: '팔로우는 유지하고 피드·스토리에서만 빼기' },
       ],
+    },
+    {
+      title: '도움말',
+      items: [{ to: '/accounts/reports', label: '신고 내역', icon: Flag, hint: '내가 신고한 콘텐츠와 처리 결과' }],
     },
     {
       title: '표시되는 내용',

@@ -18,6 +18,7 @@ import { ShareModal } from '../dm/ShareModal'
 import { StoryRingAvatar } from '../story/StoryRingAvatar'
 import { UserListModal } from '../user/UserListModal'
 import { WhyModal } from '../ranking/WhyModal'
+import { ReportModal } from '../report/ReportModal'
 import { RichText } from './RichText'
 import { SaveButton } from './SaveButton'
 
@@ -402,6 +403,7 @@ export function CommentItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(comment.body)
   const [showReplies, setShowReplies] = useState(false)
+  const [reporting, setReporting] = useState(false)
   const replies = useReplies(comment.id, showReplies)
   const [, rerender] = useState(0)
 
@@ -528,7 +530,21 @@ export function CommentItem({
                 <Trash2 size={12} /> 삭제
               </button>
             )}
+            {me && me.user.id !== comment.author.id && (
+              <button
+                className="opacity-100 hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                onClick={() => setReporting(true)}
+              >
+                신고
+              </button>
+            )}
           </div>
+          {reporting && (
+            <ReportModal
+              target={{ type: 'COMMENT', target: String(comment.id), label: '댓글' }}
+              onClose={() => setReporting(false)}
+            />
+          )}
         </div>
         <button
           aria-label={comment.likedByMe ? '댓글 좋아요 취소' : '댓글 좋아요'}
@@ -687,10 +703,22 @@ export function PostMenu({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [why, setWhy] = useState(false)
   const [adWhy, setAdWhy] = useState(false)
+  const [report, setReport] = useState(false)
 
   return (
     <>
       <Modal open={open && !confirmDelete} onClose={onClose} bare title="게시물 옵션">
+        {!post.mine && (
+          <SheetButton
+            danger
+            onClick={() => {
+              onClose()
+              setReport(true)
+            }}
+          >
+            신고
+          </SheetButton>
+        )}
         {post.ad && onHideAd && (
           <SheetButton
             danger
@@ -797,6 +825,9 @@ export function PostMenu({
         <SheetButton onClick={onClose}>취소</SheetButton>
       </Modal>
       {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
+      {report && (
+        <ReportModal target={{ type: 'POST', target: post.shortcode, label: '게시물' }} onClose={() => setReport(false)} />
+      )}
       {post.ad && (
         <Modal open={adWhy} onClose={() => setAdWhy(false)} title="이 광고가 표시되는 이유">
           <div className="space-y-3 p-5 text-sm">

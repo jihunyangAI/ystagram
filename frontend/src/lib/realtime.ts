@@ -6,7 +6,15 @@ import { Client } from '@stomp/stompjs'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 export interface RealtimeEvent {
-  type: 'notification:new' | 'message:new' | 'message:edit' | 'message:unsend' | 'message:read' | 'typing' | 'story:new'
+  type:
+    | 'notification:new'
+    | 'message:new'
+    | 'message:edit'
+    | 'message:unsend'
+    | 'message:read'
+    | 'typing'
+    | 'story:new'
+    | 'channel:new'
   data: unknown
 }
 

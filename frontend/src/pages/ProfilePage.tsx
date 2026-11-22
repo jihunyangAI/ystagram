@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
-import { Ban, Bookmark, Camera, Clapperboard, Grid3x3, Link2, Lock, Menu, MoreHorizontal, Repeat2, Settings, SquareUser, UserPlus } from 'lucide-react'
+import { Ban, Bookmark, Camera, Clapperboard, Grid3x3, Link2, Lock, Megaphone, Menu, MoreHorizontal, Repeat2, Settings, SquareUser, UserPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import type { LucideIcon } from 'lucide-react'
@@ -20,6 +20,7 @@ import { formatCount } from '../lib/format'
 import { useNotificationUnread, useSavedOverview } from '../lib/social'
 import type { CollectionView, Profile } from '../lib/types'
 import { NotFoundPage } from './NotFoundPage'
+import type { ChannelSummary } from './direct/ChannelPane'
 
 type TabKey = 'posts' | 'reels' | 'reposts' | 'saved' | 'tagged'
 
@@ -211,6 +212,7 @@ export function ProfilePage() {
         <div className="mt-4 flex gap-2 md:hidden">{actions}</div>
       </section>
 
+      <ChannelCard username={user.username} />
       <HighlightsRow username={user.username} mine={profile.me} enabled={!locked} />
 
       {profile.flags.blocked ? (
@@ -414,6 +416,43 @@ function Bio({ profile }: { profile: Profile }) {
       )}
       {profile.aiProfile && (
         <p className="mt-1 inline-block rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted">AI 생성 프로필</p>
+      )}
+    </div>
+  )
+}
+
+/** 프로필의 브로드캐스트 채널 (있을 때만) */
+function ChannelCard({ username }: { username: string }) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { data } = useQuery({
+    queryKey: ['user-channel', username],
+    queryFn: () => api.get<ChannelSummary | undefined>(`/api/users/${username}/channel`),
+  })
+  const join = useMutation({
+    mutationFn: () => api.put<ChannelSummary>(`/api/channels/${data!.id}/members/me`),
+    onSuccess: (c) => {
+      void qc.invalidateQueries({ queryKey: ['user-channel', username] })
+      void qc.invalidateQueries({ queryKey: ['channels'] })
+      navigate(`/direct/channel/${c.id}`)
+    },
+  })
+  if (!data) return null
+  return (
+    <div className="mx-4 mb-3 flex items-center gap-3 rounded-xl border border-border px-3 py-2.5 md:mx-0">
+      <Megaphone size={22} className="shrink-0 text-primary" />
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="truncate font-semibold">{data.name}</p>
+        <p className="text-xs text-muted">브로드캐스트 채널 · 멤버 {data.memberCount.toLocaleString('ko-KR')}명</p>
+      </div>
+      {data.joined || data.mine ? (
+        <Link to={`/direct/channel/${data.id}`} className="btn btn-secondary px-3 py-1 text-sm">
+          보기
+        </Link>
+      ) : (
+        <button className="btn btn-primary px-3 py-1 text-sm" disabled={join.isPending} onClick={() => join.mutate()}>
+          참여
+        </button>
       )}
     </div>
   )

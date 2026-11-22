@@ -2,18 +2,19 @@ import { useState } from 'react'
 import { ConfirmModal, Modal, SheetButton } from '../Modal'
 import { toast } from '../Toast'
 import { Toggle } from '../post/CaptionField'
+import { ReportModal } from '../report/ReportModal'
 import { removeFollower, useRelationAction } from '../../lib/relations'
 import type { Profile } from '../../lib/types'
 import { useQueryClient } from '@tanstack/react-query'
 
 /**
- * 다른 사람 프로필의 ⋯ 메뉴: 친한 친구·즐겨찾기·숨기기·제한·차단·팔로워 삭제·링크 복사.
+ * 다른 사람 프로필의 ⋯ 메뉴: 친한 친구·즐겨찾기·숨기기·제한·신고·차단·팔로워 삭제·링크 복사.
  * 차단·제한·숨기기는 상대에게 알리지 않는다.
  */
 export function ProfileMenu({ profile, open, onClose }: { profile: Profile; open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const action = useRelationAction()
-  const [sheet, setSheet] = useState<'block' | 'mute' | 'remove' | null>(null)
+  const [sheet, setSheet] = useState<'block' | 'mute' | 'remove' | 'report' | null>(null)
   const { user, flags } = profile
   const run = (a: Parameters<typeof action.mutate>[0]['action'], done: string) =>
     action.mutate(
@@ -62,6 +63,9 @@ export function ProfileMenu({ profile, open, onClose }: { profile: Profile; open
             )}
           </>
         )}
+        <SheetButton danger onClick={() => setSheet('report')}>
+          신고
+        </SheetButton>
         <SheetButton danger onClick={() => (flags.blocked ? run({ op: 'block', on: false }, '차단을 해제했습니다') : setSheet('block'))}>
           {flags.blocked ? '차단 해제' : '차단'}
         </SheetButton>
@@ -104,6 +108,15 @@ export function ProfileMenu({ profile, open, onClose }: { profile: Profile; open
           )
         }
       />
+      {sheet === 'report' && (
+        <ReportModal
+          target={{ type: 'USER', target: user.username, label: '계정' }}
+          onClose={() => {
+            setSheet(null)
+            onClose()
+          }}
+        />
+      )}
       <MuteModal
         open={sheet === 'mute'}
         onClose={() => setSheet(null)}

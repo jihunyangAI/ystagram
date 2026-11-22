@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { MessageCirclePlus, Send } from 'lucide-react'
+import { Map as MapIcon, MessageCirclePlus, Send } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
 import { Modal } from '../../components/Modal'
@@ -11,6 +11,8 @@ import { openConversation, useDmUnread, useInbox } from '../../lib/dm'
 import { timeAgo } from '../../lib/format'
 import type { DmFolder, InboxItem, UserSummary } from '../../lib/types'
 import { ThreadPane } from './ThreadPane'
+import { ChannelList, ChannelPane, useChannels } from './ChannelPane'
+import { BlendPane } from './BlendPane'
 import { NotesTray } from '../../components/dm/NotesTray'
 
 const FOLDERS: { key: DmFolder; label: string }[] = [
@@ -31,10 +33,13 @@ export function conversationName(c: { isGroup: boolean; title: string | null; me
  * 기본: 내가 팔로우하는 사람 / 요청: 그 외 (수락하거나 답장하면 기본으로)
  */
 export function DirectPage() {
-  const { id } = useParams()
+  const { id, channelId: channelParam, blendId: blendParam } = useParams()
   const conversationId = id ? Number(id) : null
+  const channelId = channelParam ? Number(channelParam) : null
+  const blendId = blendParam ? Number(blendParam) : null
+  const open = conversationId ?? channelId ?? blendId
   const { data: me } = useMe()
-  const [folder, setFolder] = useState<DmFolder>('PRIMARY')
+  const [folder, setFolder] = useState<DmFolder | 'CHANNELS'>(channelId !== null ? 'CHANNELS' : 'PRIMARY')
   const [composing, setComposing] = useState(false)
   if (!me) return null
 
@@ -43,24 +48,37 @@ export function DirectPage() {
       <section
         className={clsx(
           'flex w-full flex-col border-r border-border md:w-[360px] md:shrink-0',
-          conversationId !== null && 'hidden md:flex',
+          open !== null && 'hidden md:flex',
         )}
         aria-label="받은 메시지함"
       >
         <header className="flex items-center justify-between px-5 pt-5 pb-3">
           <h1 className="text-xl font-bold">{me.user.username}</h1>
-          <button aria-label="새 메시지" onClick={() => setComposing(true)} className="p-1">
-            <MessageCirclePlus size={26} />
-          </button>
+          <span className="flex items-center gap-3">
+            <Link to="/direct/map" aria-label="지도" title="친구 지도" className="p-1">
+              <MapIcon size={24} />
+            </Link>
+            <button aria-label="새 메시지" onClick={() => setComposing(true)} className="p-1">
+              <MessageCirclePlus size={26} />
+            </button>
+          </span>
         </header>
         <NotesTray me={me.user} />
         <FolderTabs folder={folder} onChange={setFolder} />
-        <InboxList folder={folder} activeId={conversationId} meId={me.user.id} />
+        {folder === 'CHANNELS' ? (
+          <ChannelList activeId={channelId} />
+        ) : (
+          <InboxList folder={folder} activeId={conversationId} meId={me.user.id} />
+        )}
       </section>
 
-      <section className={clsx('min-w-0 flex-1', conversationId === null && 'hidden md:flex')}>
+      <section className={clsx('min-w-0 flex-1', open === null && 'hidden md:flex')}>
         {conversationId !== null ? (
           <ThreadPane key={conversationId} id={conversationId} me={me.user} />
+        ) : channelId !== null ? (
+          <ChannelPane key={channelId} id={channelId} />
+        ) : blendId !== null ? (
+          <BlendPane key={blendId} id={blendId} meId={me.user.id} />
         ) : (
           <div className="m-auto flex flex-col items-center gap-3 text-center">
             <span className="rounded-full border-2 border-text p-5">
@@ -83,8 +101,10 @@ export function DirectPage() {
   )
 }
 
-function FolderTabs({ folder, onChange }: { folder: DmFolder; onChange: (f: DmFolder) => void }) {
+function FolderTabs({ folder, onChange }: { folder: DmFolder | 'CHANNELS'; onChange: (f: DmFolder | 'CHANNELS') => void }) {
   const { data: unread } = useDmUnread()
+  const { data: channels } = useChannels()
+  const channelUnread = channels?.filter((c) => c.unread > 0).length ?? 0
   const count = (f: DmFolder) => (unread ? (f === 'PRIMARY' ? unread.primary : f === 'GENERAL' ? unread.general : unread.requests) : 0)
   return (
     <div role="tablist" className="flex border-b border-border">
@@ -103,6 +123,15 @@ function FolderTabs({ folder, onChange }: { folder: DmFolder; onChange: (f: DmFo
           {count(f.key) > 0 && <span className="ml-1 text-primary">{count(f.key)}</span>}
         </button>
       ))}
+      <button
+        role="tab"
+        aria-selected={folder === 'CHANNELS'}
+        onClick={() => onChange('CHANNELS')}
+        className={clsx('flex-1 border-b-2 py-2.5 text-sm font-semibold', folder === 'CHANNELS' ? 'border-text' : 'border-transparent text-muted')}
+      >
+        채널
+        {channelUnread > 0 && <span className="ml-1 text-primary">{channelUnread}</span>}
+      </button>
     </div>
   )
 }
@@ -136,6 +165,8 @@ function preview(c: InboxItem, meId: number): string {
       return `${who}게시물을 보냈습니다`
     case 'STORY_REPLY':
       return `${who}스토리에 답장: ${l.text ?? ''}`
+    case 'BLEND_INVITE':
+      return `${who}Blend 초대`
     case 'NOTE_REPLY':
       return `${who}노트에 답장: ${l.text ?? ''}`
     default:

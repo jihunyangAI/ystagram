@@ -179,3 +179,60 @@ body {
     animation-duration: 0.01ms;
   }
 }
+
+/* 지도 핀 (Leaflet divIcon) */
+.map-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.map-pin img {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  background: #f2f2f2;
+}
+.map-pin span {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 9999px;
+  background: #fff;
+  color: #111;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.map-pin-me img {
+  border-color: var(--color-primary, #1f8a70);
+}
+.map-place {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  background: #ddd;
+}
+.map-place img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.map-place b {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  padding: 0 5px;
+  font-size: 10px;
+}

@@ -30,10 +30,27 @@ export function useSetSession() {
   }
 }
 
+/** 2단계 인증이 켜진 계정은 비밀번호 다음에 코드를 묻는다 */
+export interface TwoFactorChallenge {
+  twoFactorRequired: true
+  username: string
+}
+
 export function useLogin() {
   const setSession = useSetSession()
   return useMutation({
-    mutationFn: (body: { login: string; password: string }) => api.post<Me>('/api/auth/login', body),
+    mutationFn: (body: { login: string; password: string }) =>
+      api.post<Me | TwoFactorChallenge>('/api/auth/login', body),
+    onSuccess: (r) => {
+      if (!('twoFactorRequired' in r)) setSession(r)
+    },
+  })
+}
+
+export function useLoginTwoFactor() {
+  const setSession = useSetSession()
+  return useMutation({
+    mutationFn: (code: string) => api.post<Me>('/api/auth/login/2fa', { code }),
     onSuccess: setSession,
   })
 }

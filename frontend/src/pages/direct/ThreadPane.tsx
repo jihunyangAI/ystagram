@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, ChevronDown, ChevronLeft, CornerUpLeft, ImageIcon, Pencil, Smile, Undo2, X } from 'lucide-react'
+import { Blend, CalendarClock, ChevronDown, ChevronLeft, CornerUpLeft, ImageIcon, Pencil, Smile, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
 import { ConfirmModal, Modal } from '../../components/Modal'
@@ -118,6 +118,7 @@ export function ThreadPane({ id, me }: { id: number; me: UserSummary }) {
             <span className="text-xs text-muted">{c.members.length + 1}명</span>
           </div>
         )}
+        {single && <BlendButton conversationId={id} />}
       </header>
 
       <div ref={scroller} onScroll={onScroll} className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3 py-3 md:px-5">
@@ -268,6 +269,20 @@ function Bubble({
         <span className="max-w-[260px] truncate rounded-2xl bg-surface-2/70 px-3 py-1.5 text-xs text-muted">
           ↩ {m.replyTo.senderUsername}: {m.replyTo.text ?? '메시지를 보내지 않았습니다'}
         </span>
+      )}
+      {m.kind === 'BLEND_INVITE' && m.blend && (
+        <Link
+          to={`/direct/blend/${m.blend.id}`}
+          className="flex w-60 items-center gap-3 rounded-2xl border border-border px-3 py-2.5 hover:bg-surface-2"
+        >
+          <Blend size={28} className="shrink-0 text-primary" />
+          <span className="text-sm">
+            <span className="block font-semibold">{mine ? 'Blend에 초대했어요' : 'Blend 초대를 받았어요'}</span>
+            <span className="block text-xs text-muted">
+              {m.blend.status === 'ACTIVE' ? '함께 보는 릴스 보기' : mine ? '상대가 참여하면 시작돼요' : '눌러서 참여하기'}
+            </span>
+          </span>
+        </Link>
       )}
       {m.kind === 'NOTE_REPLY' && (
         <>
@@ -642,5 +657,35 @@ function ScheduledList({ id }: { id: number }) {
         </ul>
       )}
     </div>
+  )
+}
+
+/** 1:1 대화방 머리의 Blend 버튼: 있으면 열고, 없으면 초대 */
+function BlendButton({ conversationId }: { conversationId: number }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['conv-blend', conversationId],
+    queryFn: () => api.get<{ id: number; status: string } | undefined>(`/api/direct/conversations/${conversationId}/blend`),
+  })
+  const invite = useMutation({
+    mutationFn: () => api.post<{ id: number }>(`/api/direct/conversations/${conversationId}/blend`),
+    onSuccess: (b) => {
+      void qc.invalidateQueries({ queryKey: ['conv-blend', conversationId] })
+      void qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+      navigate(`/direct/blend/${b.id}`)
+    },
+    onError: (e) => toast((e as Error).message),
+  })
+  return (
+    <button
+      className="ml-auto flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold hover:bg-surface-2"
+      title="두 분을 위한 릴스 피드"
+      onClick={() => (data?.id ? navigate(`/direct/blend/${data.id}`) : invite.mutate())}
+      disabled={invite.isPending}
+    >
+      <Blend size={14} className="text-primary" />
+      {data?.id ? 'Blend' : 'Blend 초대'}
+    </button>
   )
 }
