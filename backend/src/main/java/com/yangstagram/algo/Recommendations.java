@@ -50,17 +50,19 @@ public class Recommendations {
     /** 홈 추천: 팔로우하지 않는 공개 계정, 추천 허용 게시물 */
     static final String HOME_SUGGESTED = """
             p.author_id <> :me and not a.is_private and p.recommendable and not p.trial
+            and %4$s
             and p.author_id not in %1$s
             and not exists (select 1 from reposts r where r.post_id = p.id and r.user_id in %1$s)
             and %2$s and %3$s
-            """.formatted(FOLLOWEES, RelationSql.notBlocked("a.id"), RelationSql.postsNotMuted("a.id"));
+            """.formatted(FOLLOWEES, RelationSql.notBlocked("a.id"), RelationSql.postsNotMuted("a.id"),
+            PostQueries.NOT_SUSPENDED);
 
     /** 탐색: 팔로우하지 않는 공개 계정의 게시물·릴스 */
     static final String EXPLORE = """
             not a.is_private and a.id <> :me and p.recommendable
             and a.id not in %s
-            and %s
-            """.formatted(FOLLOWEES, RelationSql.notBlocked("a.id"));
+            and %s and %s
+            """.formatted(FOLLOWEES, RelationSql.notBlocked("a.id"), PostQueries.NOT_SUSPENDED);
 
     /** 릴스 추천 탭: 볼 수 있는 릴스 중 추천 허용이거나 팔로우하는 사람 것 */
     static final String REELS = """
@@ -138,6 +140,75 @@ public class Recommendations {
             Scored s = byId.get(v.id());
             String source = followed.contains(v.author().id()) ? "FOLLOWING" : "SUGGESTED";
             items.add(v.withRanking(AlgorithmSettings.ranking(Surface.REELS, source, s, w, p * REELS_PAGE + i + 1, false)));
+        }
+        return new Page<>(items, next, since.toEpochMilli());
+    }
+
+    // ------------------------------------------------------------ Blend
+
+    /**
+     * Blend 한 칸: 릴스 + 누구를 위한 추천인지.
+     *
+     * @param forUsers 관심 주제가 맞거나 좋아요를 누른 사람 (사용자 이름)
+     * @param reason   "OO님의 관심사 '음식'" / "OO님이 좋아한 릴스" 같은 한 줄
+     */
+    public record BlendItem(PostView post, List<String> forUsers, String reason) {
+    }
+
+    /**
+     * Blend 릴스: 두 사람의 관심 주제를 합쳐 릴스 점수식으로 줄 세운다. 둘 중 한 명이 좋아요한 릴스도 섞인다.
+     * "이미 본 것" 감점은 보는 사람(me) 기준.
+     */
+    public Page<BlendItem> blendReels(long me, long other, String meName, String otherName, int page, Long sinceMs) {
+        int p = Math.max(0, page);
+        Instant now = Instant.now(clock);
+        Instant since = sinceMs == null ? now : Instant.ofEpochMilli(sinceMs);
+        List<String> mine = interests.effective(me);
+        List<String> theirs = interests.effective(other);
+        List<String> topics = new ArrayList<>(mine);
+        theirs.forEach(t -> { if (!topics.contains(t)) topics.add(t); });
+        Map<Component, Double> w = settings.weights(Surface.REELS);
+        String candidates = ai(REELS) + " and " + RelationSql.notBlocked("a.id").replace(":me", ":other");
+        List<Scored> scored = ranker.rank(new Request(me, w, topics, now, since, candidates,
+                new MapSqlParameterSource("other", other), REELS_PAGE + 1, p * REELS_PAGE));
+        Integer next = scored.size() > REELS_PAGE ? p + 1 : null;
+        List<Scored> pageItems = scored.subList(0, Math.min(REELS_PAGE, scored.size()));
+        List<Long> ids = pageItems.stream().map(Scored::postId).toList();
+        if (ids.isEmpty()) return new Page<>(List.of(), null, since.toEpochMilli());
+
+        Map<Long, String> topicOf = new HashMap<>();
+        Map<Long, Set<Long>> likedBy = new HashMap<>();
+        jdbc.query("select id, topic from posts where id in (:ids)", Map.of("ids", ids),
+                rs -> { topicOf.put(rs.getLong(1), rs.getString(2)); });
+        jdbc.query("select post_id, user_id from likes where post_id in (:ids) and user_id in (:me, :other)",
+                Map.of("ids", ids, "me", me, "other", other),
+                rs -> { likedBy.computeIfAbsent(rs.getLong(1), k -> new java.util.HashSet<>()).add(rs.getLong(2)); });
+
+        Map<Long, Scored> byId = pageItems.stream().collect(Collectors.toMap(Scored::postId, s -> s));
+        List<BlendItem> items = new ArrayList<>();
+        int rank = p * REELS_PAGE;
+        for (PostView v : queries.views(ids, me)) {
+            String topic = topicOf.get(v.id());
+            Set<Long> liked = likedBy.getOrDefault(v.id(), Set.of());
+            List<String> forUsers = new ArrayList<>();
+            String reason;
+            if (liked.contains(other)) {
+                forUsers.add(otherName);
+                reason = otherName + "님이 좋아한 릴스";
+            } else if (liked.contains(me)) {
+                forUsers.add(meName);
+                reason = "회원님이 좋아한 릴스";
+            } else {
+                if (topic != null && mine.contains(topic)) forUsers.add(meName);
+                if (topic != null && theirs.contains(topic)) forUsers.add(otherName);
+                String label = topicLabel(topic);
+                reason = forUsers.size() == 2 ? "두 분 모두 관심 있는 '" + label + "'"
+                        : forUsers.contains(otherName) ? otherName + "님의 관심사 '" + label + "'"
+                        : forUsers.contains(meName) ? "회원님의 관심사 '" + label + "'"
+                        : "두 분이 좋아할 만한 릴스";
+            }
+            items.add(new BlendItem(v.withRanking(AlgorithmSettings.ranking(Surface.REELS, "BLEND", byId.get(v.id()), w,
+                    ++rank, false)), forUsers, reason));
         }
         return new Page<>(items, next, since.toEpochMilli());
     }

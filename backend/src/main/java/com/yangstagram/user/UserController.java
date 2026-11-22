@@ -36,8 +36,12 @@ public class UserController {
     private final StoryRings storyRings;
     private final RelationService relations;
 
+    private final com.yangstagram.moderation.ModerationService moderation;
+
     public UserController(UserService userService, FollowService followService, PostQueries postQueries,
-                          StoryRings storyRings, RelationService relations) {
+                          StoryRings storyRings, RelationService relations,
+                          com.yangstagram.moderation.ModerationService moderation) {
+        this.moderation = moderation;
         this.relations = relations;
         this.userService = userService;
         this.followService = followService;
@@ -49,8 +53,9 @@ public class UserController {
     public ProfileResponse profile(@PathVariable String username) {
         long me = CurrentUser.requireId();
         User user = userService.getByUsername(username);
-        // 나를 차단한 사람은 "찾을 수 없음"으로 보인다
-        if (relations.blockedBy(me, user.getId())) {
+        // 나를 차단한 사람, 정지된 계정은 "찾을 수 없음"으로 보인다
+        if (relations.blockedBy(me, user.getId())
+                || (me != user.getId() && moderation.suspendedUntil(user.getId()) != null)) {
             throw ApiException.notFound("죄송합니다. 페이지를 사용할 수 없습니다.");
         }
         return profileOf(me, user);

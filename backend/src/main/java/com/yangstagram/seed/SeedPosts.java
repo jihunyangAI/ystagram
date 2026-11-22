@@ -314,11 +314,14 @@ final class SeedPosts {
 
     private void insertLocations() {
         Timestamp ts = Timestamp.from(now);
-        jdbc.batchUpdate("insert into locations (name, city, created_at) values (?, ?, ?)",
+        jdbc.batchUpdate("insert into locations (name, city, created_at, lat, lng) values (?, ?, ?, ?, ?)",
                 SeedText.LOCATIONS, 100, (ps, loc) -> {
+                    double[] c = SeedText.COORDS.get(loc[0]);
                     ps.setString(1, loc[0]);
                     ps.setString(2, loc[1]);
                     ps.setTimestamp(3, ts);
+                    ps.setObject(4, c == null ? null : c[0]);
+                    ps.setObject(5, c == null ? null : c[1]);
                 });
     }
 

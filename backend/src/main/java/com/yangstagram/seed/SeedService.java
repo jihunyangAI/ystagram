@@ -103,7 +103,9 @@ public class SeedService {
                                collection_posts, saved_posts, reposts, comment_likes, search_history,
                                blocks, restricts, mutes, close_friends, story_sticker_responses, highlights,
                                highlight_items, post_tags, post_collaborators, post_views,
-                               events, user_topic_prefs, scheduled_posts, scheduled_messages, notes, ads
+                               events, user_topic_prefs, scheduled_posts, scheduled_messages, notes, ads,
+                               reports, backup_codes, user_locations, channels, channel_members,
+                               channel_messages, channel_reactions, channel_poll_votes, blends
                                restart identity cascade
                 """);
 
@@ -129,6 +131,9 @@ public class SeedService {
         SeedFeatures.Result features = new SeedFeatures(jdbc, rnd, now).generate();
         log.info("M4-② 데이터: AI 프로필={}, AI 라벨 게시물={}, 광고={}, 노트={}, 시험 릴스={}", features.aiProfiles(),
                 features.aiPosts(), features.ads(), features.notes(), features.trialReels());
+        SeedM5.Result m5 = new SeedM5(jdbc, rnd, now).generate(users, follows);
+        log.info("M5 데이터: 신고={}, 위치 공유={}, 채널={}, 채널 글={}", m5.reports(), m5.locations(), m5.channels(),
+                m5.channelMessages());
 
         jdbc.execute("analyze"); // 대량으로 넣은 뒤 통계를 새로 (쿼리 계획이 틀어지지 않게)
         long elapsed = System.currentTimeMillis() - started;

@@ -276,6 +276,7 @@ public class DmService {
                    su.username as s_username, su.full_name as s_full_name, su.avatar_url as s_avatar_url,
                    su.avatar_seed as s_avatar_seed, su.is_verified as s_is_verified, su.is_private as s_is_private,
                    su.id as s_id,
+                   bl.status as bl_status,
                    r.id as r_id, r.body as r_body, r.kind as r_kind, r.unsent_at as r_unsent, ru.username as r_username
             from messages m
             join users u on u.id = m.sender_id
@@ -283,6 +284,7 @@ public class DmService {
             left join users a on a.id = p.author_id
             left join stories s on s.id = m.story_id
             left join users su on su.id = s.author_id
+            left join blends bl on bl.id = m.blend_id
             left join messages r on r.id = m.reply_to_id
             left join users ru on ru.id = r.sender_id
             """.formatted(UserRows.cols("u"), UserRows.cols("a"), PostQueries.VISIBLE);
@@ -322,7 +324,7 @@ public class DmService {
                 });
         return list.stream().map(m -> new MessageView(m.id(), m.conversationId(), m.sender(), m.kind(), m.body(),
                 m.media(), m.post(), m.story(), m.replyTo(), m.createdAt(), m.edited(), m.unsent(),
-                reactions.getOrDefault(m.id(), List.of()), m.canEdit(), m.quote())).toList();
+                reactions.getOrDefault(m.id(), List.of()), m.canEdit(), m.quote(), m.blend())).toList();
     }
 
     private MessageView readMessage(ResultSet rs, long me, Instant now) throws SQLException {
@@ -362,7 +364,9 @@ public class DmService {
                 rs.getTimestamp("edited_at") != null, unsent, List.of(),
                 mine && !unsent && "TEXT".equals(rs.getString("kind"))
                         && Duration.between(createdAt, now).compareTo(PostQueries.EDIT_WINDOW) <= 0,
-                unsent ? null : rs.getString("quote"));
+                unsent ? null : rs.getString("quote"),
+                rs.getObject("blend_id") == null ? null
+                        : new DmDtos.BlendRef(rs.getLong("blend_id"), rs.getString("bl_status")));
     }
 
     private static String kindLabel(String kind) {
@@ -371,6 +375,7 @@ public class DmService {
             case "POST" -> "게시물";
             case "STORY_REPLY" -> "스토리 답장";
             case "NOTE_REPLY" -> "노트 답장";
+            case "BLEND_INVITE" -> "Blend 초대";
             default -> "";
         };
     }
@@ -437,8 +442,19 @@ public class DmService {
         return insert(conversationId, me, kind, body, img, postId, storyId, replyToId, null);
     }
 
+    /** Blend 초대 메시지 */
+    @Transactional
+    public MessageView blendInvite(long conversationId, long me, long blendId) {
+        return insert(conversationId, me, "BLEND_INVITE", null, null, null, null, null, null, blendId);
+    }
+
     private MessageView insert(long conversationId, long me, String kind, String body, StoredImage img, Long postId,
                                Long storyId, Long replyToId, String quote) {
+        return insert(conversationId, me, kind, body, img, postId, storyId, replyToId, quote, null);
+    }
+
+    private MessageView insert(long conversationId, long me, String kind, String body, StoredImage img, Long postId,
+                               Long storyId, Long replyToId, String quote, Long blendId) {
         membership(conversationId, me);
         requireCanSend(conversationId, me);
         if (replyToId != null) {
@@ -449,13 +465,13 @@ public class DmService {
         Timestamp now = Timestamp.from(Instant.now(clock));
         Long id = jdbc.queryForObject("""
                 insert into messages (conversation_id, sender_id, kind, body, media_url, media_width, media_height,
-                                      post_id, story_id, reply_to_id, created_at, quote)
-                values (:c, :me, :kind, :body, :url, :w, :h, :post, :story, :reply, :now, :quote) returning id
+                                      post_id, story_id, reply_to_id, created_at, quote, blend_id)
+                values (:c, :me, :kind, :body, :url, :w, :h, :post, :story, :reply, :now, :quote, :blend) returning id
                 """, new MapSqlParameterSource("c", conversationId).addValue("me", me).addValue("kind", kind)
                 .addValue("body", body).addValue("url", img == null ? null : img.url())
                 .addValue("w", img == null ? null : img.width()).addValue("h", img == null ? null : img.height())
                 .addValue("post", postId).addValue("story", storyId).addValue("reply", replyToId)
-                .addValue("now", now).addValue("quote", quote), Long.class);
+                .addValue("now", now).addValue("quote", quote).addValue("blend", blendId), Long.class);
         jdbc.update("update conversations set last_message_at = :now where id = :c",
                 new MapSqlParameterSource("now", now).addValue("c", conversationId));
         // 내가 보낸 메시지까지는 읽은 것으로, 요청함에서 답장하면 수락한 것으로

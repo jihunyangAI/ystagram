@@ -33,7 +33,11 @@ public final class DmDtos {
     public record MessageView(long id, long conversationId, UserSummary sender, String kind, String body,
                               Media media, SharedPost post, SharedStory story, ReplyTo replyTo,
                               Instant createdAt, boolean edited, boolean unsent, List<Reaction> reactions,
-                              boolean canEdit, String quote) {
+                              boolean canEdit, String quote, BlendRef blend) {
+    }
+
+    /** Blend 초대 메시지 (BLEND_INVITE) */
+    public record BlendRef(long id, String status) {
     }
 
     public record Media(String url, int width, int height) {

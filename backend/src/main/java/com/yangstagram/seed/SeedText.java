@@ -76,6 +76,24 @@ public final class SeedText {
             new String[] {"여수 밤바다", "여수"}, new String[] {"속초 해수욕장", "속초"}, new String[] {"가평 쁘띠프랑스", "가평"},
             new String[] {"도쿄 시부야", "도쿄"}, new String[] {"오사카 도톤보리", "오사카"}, new String[] {"파리 에펠탑", "파리"});
 
+    /** 장소 좌표 {위도, 경도} (지도용, 대략적인 위치) */
+    public static final Map<String, double[]> COORDS = Map.ofEntries(
+            Map.entry("서울숲", new double[] {37.5444, 127.0374}), Map.entry("성수동 카페거리", new double[] {37.5446, 127.0557}),
+            Map.entry("연남동", new double[] {37.5660, 126.9250}), Map.entry("익선동 한옥거리", new double[] {37.5743, 126.9898}),
+            Map.entry("한강공원 뚝섬", new double[] {37.5294, 127.0697}), Map.entry("북촌 한옥마을", new double[] {37.5826, 126.9830}),
+            Map.entry("을지로", new double[] {37.5660, 126.9910}), Map.entry("남산타워", new double[] {37.5512, 126.9882}),
+            Map.entry("잠실 롯데월드몰", new double[] {37.5130, 127.1040}), Map.entry("광화문", new double[] {37.5759, 126.9768}),
+            Map.entry("해운대 해수욕장", new double[] {35.1587, 129.1604}), Map.entry("광안리", new double[] {35.1532, 129.1187}),
+            Map.entry("감천문화마을", new double[] {35.0975, 129.0106}), Map.entry("전포 카페거리", new double[] {35.1555, 129.0640}),
+            Map.entry("애월 해안도로", new double[] {33.4630, 126.3097}), Map.entry("성산일출봉", new double[] {33.4581, 126.9425}),
+            Map.entry("협재 해수욕장", new double[] {33.3940, 126.2397}), Map.entry("강릉 안목해변", new double[] {37.7717, 128.9475}),
+            Map.entry("경주 황리단길", new double[] {35.8384, 129.2100}), Map.entry("전주 한옥마을", new double[] {35.8147, 127.1526}),
+            Map.entry("수원 행궁동", new double[] {37.2830, 127.0150}), Map.entry("인천 송도 센트럴파크", new double[] {37.3925, 126.6392}),
+            Map.entry("대구 동성로", new double[] {35.8690, 128.5950}), Map.entry("대전 성심당", new double[] {36.3276, 127.4273}),
+            Map.entry("여수 밤바다", new double[] {34.7400, 127.7460}), Map.entry("속초 해수욕장", new double[] {38.1904, 128.6015}),
+            Map.entry("가평 쁘띠프랑스", new double[] {37.7194, 127.4880}), Map.entry("도쿄 시부야", new double[] {35.6595, 139.7005}),
+            Map.entry("오사카 도톤보리", new double[] {34.6687, 135.5013}), Map.entry("파리 에펠탑", new double[] {48.8584, 2.2945}));
+
     /** 짧은 반응 댓글 */
     public static final List<String> COMMENTS = List.of(
             "너무 예뻐요 😍", "여기 어디예요?", "와 분위기 미쳤다", "저도 가 보고 싶어요!", "사진 너무 잘 찍으셨다",

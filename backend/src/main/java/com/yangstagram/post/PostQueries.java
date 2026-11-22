@@ -54,7 +54,11 @@ public class PostQueries {
              and vf.status = 'ACCEPTED'))
             and (not p.trial or a.id = :me or not exists (
              select 1 from follows tf where tf.follower_id = :me and tf.following_id = a.id and tf.status = 'ACCEPTED'))
+            and (a.id = :me or a.suspended_until is null or a.suspended_until <= current_timestamp)
             and """ + RelationSql.notBlocked("a.id");
+
+    /** 정지된 계정(신고 처리)의 콘텐츠는 다른 사람에게 안 보인다 */
+    public static final String NOT_SUSPENDED = " (a.suspended_until is null or a.suspended_until <= current_timestamp) ";
 
     /** 시험 릴스는 작성자 본인 말고는 프로필·팔로잉 피드에 나오지 않는다 */
     public static final String NOT_TRIAL = " (not p.trial or p.author_id = :me) ";
@@ -140,6 +144,7 @@ public class PostQueries {
                          or exists (select 1 from post_collaborators pc where pc.post_id = p.id and pc.status = 'ACCEPTED'
                                     and (pc.user_id in (select id from followees) or (pc.user_id = :me and not :fav))))
                     and %s and (not p.trial or p.author_id = :me)
+                    and (a.id = :me or a.suspended_until is null or a.suspended_until <= current_timestamp)
                   union all
                   select r.post_id, r.created_at, r.user_id
                   from reposts r
@@ -147,6 +152,7 @@ public class PostQueries {
                   join users a on a.id = p.author_id
                   where not :fav and r.user_id in (select id from followees)
                     and p.deleted_at is null and a.deleted_at is null and not a.is_private and not p.trial
+                    and (a.suspended_until is null or a.suspended_until <= current_timestamp)
                     and p.author_id <> :me and p.author_id not in (select id from followees)
                     and %s and %s and %s
                 ), dedup as (
