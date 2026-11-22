@@ -13,5 +13,8 @@ public enum NotificationType {
     REPOST,
     STORY_LIKE,
     TAG,
-    COLLAB_INVITE
+    COLLAB_INVITE,
+    REMIX,
+    SUBSCRIBE,
+    GIFT
 }

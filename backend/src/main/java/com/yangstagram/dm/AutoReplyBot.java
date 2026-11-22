@@ -82,6 +82,25 @@ public class AutoReplyBot {
         }, now.plus(Duration.ofMillis(sendAfter)));
     }
 
+    /**
+     * 가짜 사용자가 전화를 못 받았을 때 (통화 점검은 요청 밖에서 돌기 때문에 onMessage가 답하지 않는다):
+     * 몇 초 뒤 "전화 못 받았어요" 메시지.
+     */
+    public void afterMissedCall(long conversationId, long bot) {
+        if (!flags.get().bot() || !pending.add(conversationId)) return;
+        String reply = CALL.get(random.nextInt(CALL.size()));
+        scheduler.schedule(() -> {
+            try {
+                dm.markRead(conversationId, bot, latestMessage(conversationId));
+                dm.send(conversationId, bot, reply, null);
+            } catch (RuntimeException ex) {
+                log.info("부재중 통화 답장 실패 (대화방 {}): {}", conversationId, ex.getMessage());
+            } finally {
+                pending.remove(conversationId);
+            }
+        }, Instant.now().plus(Duration.ofMillis(3000 + random.nextInt(3000))));
+    }
+
     private long latestMessage(long conversationId) {
         Long id = jdbc.queryForObject("select max(id) from messages where conversation_id = :c",
                 Map.of("c", conversationId), Long.class);
@@ -106,6 +125,8 @@ public class AutoReplyBot {
             "여기 가 보고 싶어요!", "공유 고마워요 🙏");
     private static final List<String> IMAGE = List.of("사진 예쁘다 😍", "와 분위기 좋네요", "이거 어디예요?", "👍👍");
     private static final List<String> STORY = List.of("봐 줘서 고마워요 🙌", "ㅎㅎ 그쵸?", "다음에 같이 가요!");
+    private static final List<String> CALL = List.of("앗 전화 못 받았어요 ㅠㅠ 무슨 일이에요?",
+            "지금 통화가 좀 어려워요! 메시지로 얘기해요 🙏", "헉 방금 봤어요 이따 다시 걸게요!", "회의 중이었어요 ㅠ 무슨 일?");
     private static final List<String> NOTE = List.of("ㅋㅋ 고마워요!", "오 답장 고마워요 😊", "그쵸 그쵸");
     private static final List<String> THANKS = List.of("별말씀을요 😊", "천만에요!", "저도 고마워요 🙏");
     private static final List<String> OTHER = List.of("ㅋㅋㅋ 그러게요", "오 진짜요?", "좋아요 👍", "헐 대박",
@@ -117,6 +138,7 @@ public class AutoReplyBot {
             case "IMAGE" -> IMAGE;
             case "STORY_REPLY" -> STORY;
             case "NOTE_REPLY" -> NOTE;
+            case "CALL" -> CALL;
             default -> {
                 String b = body == null ? "" : body;
                 if (b.contains("안녕") || b.toLowerCase().startsWith("hi") || b.contains("하이")) yield GREETING;

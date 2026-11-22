@@ -49,7 +49,7 @@ public class Recommendations {
 
     /** 홈 추천: 팔로우하지 않는 공개 계정, 추천 허용 게시물 */
     static final String HOME_SUGGESTED = """
-            p.author_id <> :me and not a.is_private and p.recommendable and not p.trial
+            p.author_id <> :me and not a.is_private and p.recommendable and not p.trial and not p.subscribers_only
             and %4$s
             and p.author_id not in %1$s
             and not exists (select 1 from reposts r where r.post_id = p.id and r.user_id in %1$s)
@@ -59,7 +59,7 @@ public class Recommendations {
 
     /** 탐색: 팔로우하지 않는 공개 계정의 게시물·릴스 */
     static final String EXPLORE = """
-            not a.is_private and a.id <> :me and p.recommendable
+            not a.is_private and a.id <> :me and p.recommendable and not p.subscribers_only
             and a.id not in %s
             and %s and %s
             """.formatted(FOLLOWEES, RelationSql.notBlocked("a.id"), PostQueries.NOT_SUSPENDED);

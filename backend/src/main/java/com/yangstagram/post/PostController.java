@@ -165,6 +165,21 @@ public class PostController {
         return postService.unlike(shortcode, CurrentUser.requireId());
     }
 
+    /** 이 릴스를 리믹스한 릴스 */
+    @GetMapping("/posts/{shortcode}/remixes")
+    public List<com.yangstagram.post.dto.PostDtos.GridItem> remixes(@PathVariable String shortcode) {
+        return postService.remixes(shortcode, CurrentUser.requireId());
+    }
+
+    public record RemixSetting(boolean allow) {
+    }
+
+    @PutMapping("/posts/{shortcode}/remix-setting")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void remixSetting(@PathVariable String shortcode, @RequestBody RemixSetting body) {
+        postService.setAllowRemix(shortcode, CurrentUser.requireId(), body.allow());
+    }
+
     /** 좋아요 누른 사람 목록 (최근 순, 페이지당 30명) */
     @GetMapping("/posts/{shortcode}/likes")
     public List<UserListItem> likers(@PathVariable String shortcode, @RequestParam(defaultValue = "0") int page) {

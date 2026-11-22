@@ -26,18 +26,21 @@ public class FeatureFlags {
      * @param adsPerPage          홈 피드 한 쪽에 끼우는 광고 수 (0 = 광고 끔, 최대 3)
      * @param autoReply           가짜 사용자에게 DM을 보내면 몇 초 뒤 답장한다
      * @param recommendAiProfiles AI 생성 프로필의 게시물도 추천(홈 추천·탐색·릴스)에 넣는다
+     * @param liveBots            가짜 라이브(영상 반복 재생)를 몇 개 켜 두고, 라이브에 가짜 시청자 댓글·하트를 보낸다
      */
     public record Flags(int hashtagLimit, String navLayout, boolean hideLikeCounts, int feedSuggestedPerPage,
-                        Integer adsPerPage, Boolean autoReply, Boolean recommendAiProfiles) {
+                        Integer adsPerPage, Boolean autoReply, Boolean recommendAiProfiles,
+                        Boolean liveBots) {
 
-        public static final Flags DEFAULT = new Flags(5, "NEW", false, 2, 1, true, false);
+        public static final Flags DEFAULT = new Flags(5, "NEW", false, 2, 1, true, false, true);
 
         /** 예전에 저장한 값에는 새 항목이 없으므로 기본값으로 채운다 */
         Flags withDefaults() {
             return new Flags(hashtagLimit, navLayout, hideLikeCounts, feedSuggestedPerPage,
                     adsPerPage == null ? DEFAULT.adsPerPage : adsPerPage,
                     autoReply == null ? DEFAULT.autoReply : autoReply,
-                    recommendAiProfiles == null ? DEFAULT.recommendAiProfiles : recommendAiProfiles);
+                    recommendAiProfiles == null ? DEFAULT.recommendAiProfiles : recommendAiProfiles,
+                    liveBots == null ? DEFAULT.liveBots : liveBots);
         }
 
         public int ads() {
@@ -46,6 +49,10 @@ public class FeatureFlags {
 
         public boolean bot() {
             return autoReply == null ? DEFAULT.autoReply : autoReply;
+        }
+
+        public boolean lives() {
+            return liveBots == null ? DEFAULT.liveBots : liveBots;
         }
 
         public boolean aiInRecs() {

@@ -33,7 +33,11 @@ public final class DmDtos {
     public record MessageView(long id, long conversationId, UserSummary sender, String kind, String body,
                               Media media, SharedPost post, SharedStory story, ReplyTo replyTo,
                               Instant createdAt, boolean edited, boolean unsent, List<Reaction> reactions,
-                              boolean canEdit, String quote, BlendRef blend) {
+                              boolean canEdit, String quote, BlendRef blend, CallRef call) {
+    }
+
+    /** 통화 기록 메시지 (CALL). durationSec는 연결된 통화만 */
+    public record CallRef(long id, boolean video, String status, Integer durationSec) {
     }
 
     /** Blend 초대 메시지 (BLEND_INVITE) */

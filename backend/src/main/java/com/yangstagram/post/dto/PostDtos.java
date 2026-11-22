@@ -43,7 +43,8 @@ public final class PostDtos {
      */
     public record CommentView(long id, UserSummary author, String body, Instant createdAt, Long parentId,
                               boolean canDelete, boolean canEdit, boolean canPin, boolean edited, boolean pinned,
-                              int likeCount, boolean likedByMe, int replyCount, boolean restricted) {
+                              int likeCount, boolean likedByMe, int replyCount, boolean restricted,
+                              boolean subscriber) {
     }
 
     /**
@@ -65,14 +66,14 @@ public final class PostDtos {
                            List<CommentView> previewComments, boolean savedByMe, boolean repostedByMe,
                            int repostCount, Repost repost, Ring authorStory, String type, int viewCount,
                            List<TagView> tags, List<UserSummary> collaborators, boolean collabInvite,
-                           boolean aiLabeled, boolean trial, AdInfo ad, Ranking ranking) {
+                           boolean aiLabeled, boolean trial, AdInfo ad, Ranking ranking, Extras extras) {
 
         /** 추천 영역에서 줄 세운 이유를 붙인 복사본 */
         public PostView withRanking(Ranking r) {
             return new PostView(id, shortcode, author, authorRelationship, caption, location, media, likeCount,
                     commentCount, likedByMe, likedBy, hideLikeCount, commentsDisabled, createdAt, mine,
                     previewComments, savedByMe, repostedByMe, repostCount, repost, authorStory, type, viewCount, tags,
-                    collaborators, collabInvite, aiLabeled, trial, ad, r);
+                    collaborators, collabInvite, aiLabeled, trial, ad, r, extras);
         }
 
         /** 광고로 끼워 넣을 때 */
@@ -80,8 +81,27 @@ public final class PostDtos {
             return new PostView(id, shortcode, author, authorRelationship, caption, location, media, likeCount,
                     commentCount, likedByMe, likedBy, hideLikeCount, commentsDisabled, createdAt, mine,
                     previewComments, savedByMe, repostedByMe, repostCount, repost, authorStory, type, viewCount, tags,
-                    collaborators, collabInvite, aiLabeled, trial, a, ranking);
+                    collaborators, collabInvite, aiLabeled, trial, a, ranking, extras);
         }
+    }
+
+    /**
+     * M5-② 항목: 리믹스, 제품 태그, 구독자 전용, 받은 선물.
+     *
+     * @param remixOf   이 릴스가 리믹스한 원본 (아니면 null)
+     * @param giftStars 받은 별 (작성자 본인에게만, 아니면 null)
+     */
+    public record Extras(RemixRef remixOf, int remixCount, boolean allowRemix, List<ProductTag> products,
+                         boolean subscribersOnly, Long giftStars) {
+        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null);
+    }
+
+    /** @param available 원본이 지워졌거나 볼 수 없으면 false (영상 주소 없음) */
+    public record RemixRef(String shortcode, UserSummary author, String videoUrl, String thumbUrl, Integer durationMs,
+                           boolean available) {
+    }
+
+    public record ProductTag(long id, String name, int price, String thumbUrl, int mediaIndex, double x, double y) {
     }
 
     /**
@@ -120,7 +140,7 @@ public final class PostDtos {
     public record CreatePostRequest(String caption, String location, List<String> altTexts,
                                     Boolean hideLikeCount, Boolean commentsDisabled, List<TagInput> tags,
                                     List<String> collaborators, String filter, Boolean aiLabel,
-                                    Instant scheduledAt) {
+                                    Instant scheduledAt, Boolean subscribersOnly) {
 
         public boolean ai() {
             return Boolean.TRUE.equals(aiLabel);
@@ -141,7 +161,8 @@ public final class PostDtos {
      * @param trial 시험 릴스: 팔로워가 아닌 사람에게만 보여 주고 24시간 뒤 성과를 본다
      */
     public record CreateReelRequest(String caption, Long durationMs, Boolean hideLikeCount, Boolean commentsDisabled,
-                                    Boolean aiLabel, Boolean trial) {
+                                    Boolean aiLabel, Boolean trial, String remixOf, Boolean allowRemix,
+                                    Boolean subscribersOnly) {
     }
 
     /** 게시 후 수정: 캡션·위치·고급 설정 */

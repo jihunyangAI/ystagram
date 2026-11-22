@@ -45,6 +45,8 @@ public class CommentService {
                    c.restricted,
                    exists (select 1 from comment_likes cl where cl.comment_id = c.id and cl.user_id = :me)
                      as liked_by_me,
+                   """ + PostQueries.SUBSCRIBER_COL + """
+                   ,
                    %s
             from comments c join users u on u.id = c.author_id
             """.formatted(UserRows.cols("u"));
@@ -128,7 +130,7 @@ public class CommentService {
                 });
         return comments.stream().map(c -> new CommentView(c.id(), c.author(), c.body(), c.createdAt(), c.parentId(),
                 c.canDelete(), c.canEdit(), c.canPin(), c.edited(), c.pinned(), c.likeCount(), c.likedByMe(),
-                counts.getOrDefault(c.id(), 0), c.restricted())).toList();
+                counts.getOrDefault(c.id(), 0), c.restricted(), c.subscriber())).toList();
     }
 
     // ------------------------------------------------------------ 쓰기·수정·삭제

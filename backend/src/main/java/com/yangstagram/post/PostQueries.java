@@ -7,6 +7,9 @@ import com.yangstagram.lab.FeatureFlags;
 import com.yangstagram.follow.FollowService;
 import com.yangstagram.follow.Relationship;
 import com.yangstagram.post.dto.PostDtos.CommentView;
+import com.yangstagram.post.dto.PostDtos.Extras;
+import com.yangstagram.post.dto.PostDtos.ProductTag;
+import com.yangstagram.post.dto.PostDtos.RemixRef;
 import com.yangstagram.post.dto.PostDtos.GridItem;
 import com.yangstagram.post.dto.PostDtos.LocationView;
 import com.yangstagram.post.dto.PostDtos.MediaView;
@@ -55,13 +58,26 @@ public class PostQueries {
             and (not p.trial or a.id = :me or not exists (
              select 1 from follows tf where tf.follower_id = :me and tf.following_id = a.id and tf.status = 'ACCEPTED'))
             and (a.id = :me or a.suspended_until is null or a.suspended_until <= current_timestamp)
+            and (not p.subscribers_only or a.id = :me or exists (select 1 from subscriptions vs
+             where vs.subscriber_id = :me and vs.creator_id = a.id and vs.status = 'ACTIVE'))
             and """ + RelationSql.notBlocked("a.id");
+
+    /** 댓글 작성자가 게시물 주인의 구독자인가 (댓글 쿼리의 c, 게시물 c.post_id) */
+    public static final String SUBSCRIBER_COL = """
+            exists (select 1 from subscriptions sb join posts sp on sp.id = c.post_id
+                    where sb.subscriber_id = c.author_id and sb.creator_id = sp.author_id and sb.status = 'ACTIVE')
+              as subscriber
+            """;
 
     /** 정지된 계정(신고 처리)의 콘텐츠는 다른 사람에게 안 보인다 */
     public static final String NOT_SUSPENDED = " (a.suspended_until is null or a.suspended_until <= current_timestamp) ";
 
     /** 시험 릴스는 작성자 본인 말고는 프로필·팔로잉 피드에 나오지 않는다 */
-    public static final String NOT_TRIAL = " (not p.trial or p.author_id = :me) ";
+    public static final String NOT_TRIAL = """
+             (not p.trial or p.author_id = :me) and (not p.subscribers_only or p.author_id = :me or exists (
+              select 1 from subscriptions vs where vs.subscriber_id = :me and vs.creator_id = p.author_id
+              and vs.status = 'ACTIVE'))
+            """;
 
     private final NamedParameterJdbcTemplate jdbc;
     private final FollowService followService;
@@ -152,6 +168,7 @@ public class PostQueries {
                   join users a on a.id = p.author_id
                   where not :fav and r.user_id in (select id from followees)
                     and p.deleted_at is null and a.deleted_at is null and not a.is_private and not p.trial
+                    and not p.subscribers_only
                     and (a.suspended_until is null or a.suspended_until <= current_timestamp)
                     and p.author_id <> :me and p.author_id not in (select id from followees)
                     and %s and %s and %s
@@ -408,7 +425,8 @@ public class PostQueries {
                   select c.id, c.post_id, c.body, c.created_at, c.edited_at, c.pinned_at, c.like_count,
                          exists (select 1 from comment_likes cl where cl.comment_id = c.id and cl.user_id = :me)
                            as liked_by_me,
-                         %s,
+                         """ + SUBSCRIBER_COL + """
+                         , %s,
                          row_number() over (partition by c.post_id order by c.created_at desc, c.id desc) as rn
                   from comments c join users u on u.id = c.author_id
                   where c.post_id in (:ids) and c.parent_id is null and u.deleted_at is null
@@ -420,6 +438,8 @@ public class PostQueries {
             previews.computeIfAbsent(postId, k -> new ArrayList<>()).add(comment(rs, viewerId,
                     postAuthor.getOrDefault(postId, -1L), now, 0));
         });
+
+        Map<Long, Extras> extras = extras(ids, viewerId, p);
 
         Map<Long, Relationship> rel = followService.relationships(viewerId, authorIds(rows.values()));
         Map<Long, Ring> rings = storyRings.rings(viewerId, authorIds(rows.values()));
@@ -436,9 +456,82 @@ public class PostQueries {
                     previews.getOrDefault(id, List.of()), saved.contains(id), reposted.contains(id),
                     r.repostCount(), reposts.get(id), rings.get(r.author().id()), r.type(), r.viewCount(),
                     tags.getOrDefault(id, List.of()), collaborators.getOrDefault(id, List.of()), invited.contains(id),
-                    r.aiLabeled(), r.trial() && mine, null, null));
+                    r.aiLabeled(), r.trial() && mine, null, null, extras.getOrDefault(id, Extras.NONE)));
         }
         return result;
+    }
+
+    /** 리믹스·제품 태그·구독자 전용·받은 선물 */
+    private Map<Long, Extras> extras(List<Long> ids, long viewerId, MapSqlParameterSource p) {
+        Map<Long, RemixRef> remixOf = new HashMap<>();
+        Map<Long, Boolean> allow = new HashMap<>();
+        Map<Long, Boolean> exclusive = new HashMap<>();
+        Map<Long, Long> authorOf = new HashMap<>();
+        jdbc.query("""
+                select r.id, r.allow_remix, r.subscribers_only, r.author_id, r.remix_of_id, p.shortcode as o_code,
+                       om.url as o_url, om.thumb_url as o_thumb, om.duration_ms as o_duration,
+                       p.deleted_at as o_deleted, %s,
+                       case when p.id is null then false else %s end as o_visible
+                from posts r
+                left join posts p on p.id = r.remix_of_id
+                left join users a on a.id = p.author_id
+                left join post_media om on om.post_id = p.id and om.position = 0
+                where r.id in (:ids)
+                """.formatted(UserRows.cols("a"), VISIBLE), p, rs -> {
+            long id = rs.getLong("id");
+            allow.put(id, rs.getBoolean("allow_remix"));
+            exclusive.put(id, rs.getBoolean("subscribers_only"));
+            authorOf.put(id, rs.getLong("author_id"));
+            if (rs.getObject("remix_of_id") != null) {
+                boolean ok = rs.getBoolean("o_visible") && rs.getTimestamp("o_deleted") == null;
+                remixOf.put(id, ok
+                        ? new RemixRef(rs.getString("o_code"), UserRows.read(rs, "a"), rs.getString("o_url"),
+                        rs.getString("o_thumb"), (Integer) rs.getObject("o_duration"), true)
+                        : new RemixRef(null, null, null, null, null, false));
+            }
+        });
+        Map<Long, Integer> remixCounts = new HashMap<>();
+        jdbc.query("""
+                select remix_of_id, count(*) from posts where remix_of_id in (:ids) and deleted_at is null group by 1
+                """, p, rs -> {
+            remixCounts.put(rs.getLong(1), rs.getInt(2));
+        });
+        Map<Long, List<ProductTag>> products = new HashMap<>();
+        jdbc.query("""
+                select pp.post_id, pr.id, pr.name, pr.price, pr.thumb_url, pp.media_index, pp.x, pp.y
+                from post_products pp join products pr on pr.id = pp.product_id
+                where pp.post_id in (:ids) and pr.deleted_at is null order by pr.id
+                """, p, rs -> {
+            products.computeIfAbsent(rs.getLong("post_id"), k -> new ArrayList<>()).add(new ProductTag(rs.getLong("id"),
+                    rs.getString("name"), rs.getInt("price"), rs.getString("thumb_url"), rs.getInt("media_index"),
+                    rs.getDouble("x"), rs.getDouble("y")));
+        });
+        Map<Long, Long> gifts = new HashMap<>();
+        jdbc.query("""
+                select post_id, sum(stars) from gifts where post_id in (:ids) and recipient_id = :me group by 1
+                """, p, rs -> {
+            gifts.put(rs.getLong(1), rs.getLong(2));
+        });
+        Map<Long, Extras> result = new HashMap<>();
+        for (Long id : ids) {
+            boolean mine = authorOf.getOrDefault(id, -1L) == viewerId;
+            result.put(id, new Extras(remixOf.get(id), remixCounts.getOrDefault(id, 0), allow.getOrDefault(id, true),
+                    products.getOrDefault(id, List.of()), exclusive.getOrDefault(id, false),
+                    mine ? gifts.getOrDefault(id, 0L) : null));
+        }
+        return result;
+    }
+
+    /** 이 릴스를 리믹스한 릴스 (볼 수 있는 것만, 최신순) */
+    public List<GridItem> remixes(long postId, long viewerId) {
+        return jdbc.query("""
+                select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id, p.type,
+                       p.view_count, m.thumb_url, 1 as media_count
+                from posts p join users a on a.id = p.author_id join post_media m on m.post_id = p.id and m.position = 0
+                where p.remix_of_id = :id and p.deleted_at is null and a.deleted_at is null and %s
+                order by p.created_at desc limit 60
+                """.formatted(VISIBLE), new MapSqlParameterSource("id", postId).addValue("me", viewerId),
+                (rs, i) -> gridItem(rs, viewerId));
     }
 
     /**
@@ -457,7 +550,8 @@ public class PostQueries {
                 postAuthorId == viewerId && parentId == null,
                 rs.getTimestamp("edited_at") != null, rs.getTimestamp("pinned_at") != null,
                 rs.getInt("like_count"), rs.getBoolean("liked_by_me"), replyCount,
-                hasColumn(rs, "restricted") && rs.getBoolean("restricted"));
+                hasColumn(rs, "restricted") && rs.getBoolean("restricted"),
+                hasColumn(rs, "subscriber") && rs.getBoolean("subscriber"));
     }
 
     private static boolean hasColumn(java.sql.ResultSet rs, String name) throws java.sql.SQLException {

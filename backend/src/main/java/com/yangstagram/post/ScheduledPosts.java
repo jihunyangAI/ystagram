@@ -76,7 +76,7 @@ public class ScheduledPosts {
         List<StoredImage> images = posts.validateAndStore(files, req);
         CreatePostRequest stored = new CreatePostRequest(req.caption(), req.location(), req.altTexts(),
                 req.hideLikeCount(), req.commentsDisabled(), req.tags(), req.collaborators(), req.filter(),
-                req.aiLabel(), null);
+                req.aiLabel(), null, req.subscribersOnly());
         String caption = req.caption() == null ? null : req.caption().strip();
         Long id = jdbc.queryForObject("""
                 insert into scheduled_posts (author_id, payload, thumb_url, caption_start, media_count, scheduled_at,

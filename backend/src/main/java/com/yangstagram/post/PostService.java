@@ -71,6 +71,16 @@ public class PostService {
         PostRow row = queries.findByShortcode(shortcode)
                 .orElseThrow(() -> ApiException.notFound("게시물을 찾을 수 없습니다. 삭제되었거나 주소가 잘못되었습니다."));
         followService.requireCanView(viewerId, row.author().id(), row.author().isPrivate());
+        if (row.author().id() != viewerId) {
+            Boolean locked = jdbc.queryForObject("""
+                    select p.subscribers_only and not exists (select 1 from subscriptions s where s.subscriber_id = :me
+                           and s.creator_id = p.author_id and s.status = 'ACTIVE')
+                    from posts p where p.id = :id
+                    """, Map.of("me", viewerId, "id", row.id()), Boolean.class);
+            if (Boolean.TRUE.equals(locked)) {
+                throw ApiException.forbidden("SUBSCRIBERS_ONLY", "구독자 전용 게시물입니다. 구독하면 볼 수 있어요.");
+            }
+        }
         return row;
     }
 
@@ -129,15 +139,17 @@ public class PostService {
         String shortcode = Shortcodes.random();
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, location_id, hide_like_count,
-                                   comments_disabled, created_at, updated_at, filter, ai_labeled)
-                values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now, :filter, :ai)
+                                   comments_disabled, created_at, updated_at, filter, ai_labeled, subscribers_only)
+                values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now, :filter, :ai,
+                        :subs)
                 returning id
                 """, new MapSqlParameterSource("code", shortcode).addValue("author", authorId)
                 .addValue("type", images.size() > 1 ? "CAROUSEL" : "PHOTO").addValue("caption", caption)
                 .addValue("location", location == null ? null : locationId(location, now))
                 .addValue("hide", req.hideLikes()).addValue("noComments", req.noComments())
                 .addValue("filter", req.filter() == null || req.filter().length() > 20 ? null : req.filter())
-                .addValue("ai", req.ai()).addValue("now", Timestamp.from(now)), Long.class);
+                .addValue("ai", req.ai()).addValue("now", Timestamp.from(now))
+                .addValue("subs", subscribersOnly(authorId, req.subscribersOnly())), Long.class);
 
         for (int i = 0; i < images.size(); i++) {
             StoredImage img = images.get(i);
@@ -258,14 +270,28 @@ public class PostService {
         if (duration <= 0) throw ApiException.badRequest("BAD_DURATION", "영상 길이를 알 수 없습니다.");
         if (duration > MAX_REEL_MS) throw ApiException.badRequest("REEL_TOO_LONG", "릴스는 20분까지 올릴 수 있습니다.");
         String caption = validateCaption(req.caption());
+        PostRow original = null;
+        if (req.remixOf() != null && !req.remixOf().isBlank()) {
+            original = getVisible(req.remixOf(), authorId);
+            Boolean allowed = jdbc.queryForObject("select allow_remix from posts where id = :id",
+                    Map.of("id", original.id()), Boolean.class);
+            if (!"REEL".equals(original.type()) || !Boolean.TRUE.equals(allowed)) {
+                throw ApiException.badRequest("REMIX_NOT_ALLOWED", "이 릴스는 리믹스할 수 없습니다.");
+            }
+        }
         MediaStorage.StoredVideo stored = storage.saveVideo(video);
         StoredImage cover = storage.saveImage(poster);
         Instant now = Instant.now(clock);
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, hide_like_count, comments_disabled,
-                                   recommendable, created_at, updated_at, ai_labeled, trial)
-                values (:code, :author, 'REEL', :caption, :hide, :noComments, :rec, :now, :now, :ai, :trial) returning id
+                                   recommendable, created_at, updated_at, ai_labeled, trial, remix_of_id, allow_remix,
+                                   subscribers_only)
+                values (:code, :author, 'REEL', :caption, :hide, :noComments, :rec, :now, :now, :ai, :trial, :remix,
+                        :allowRemix, :subs) returning id
                 """, new MapSqlParameterSource("code", Shortcodes.random()).addValue("author", authorId)
+                .addValue("remix", original == null ? null : original.id())
+                .addValue("allowRemix", !Boolean.FALSE.equals(req.allowRemix()))
+                .addValue("subs", subscribersOnly(authorId, req.subscribersOnly()))
                 .addValue("caption", caption).addValue("hide", Boolean.TRUE.equals(req.hideLikeCount()))
                 .addValue("noComments", Boolean.TRUE.equals(req.commentsDisabled()))
                 .addValue("rec", duration <= RECOMMEND_LIMIT_MS).addValue("now", Timestamp.from(now))
@@ -280,7 +306,34 @@ public class PostService {
         attachHashtags(postId, Hashtags.extract(caption));
         jdbc.update("update users set posts_count = posts_count + 1 where id = :id", Map.of("id", authorId));
         mentions.notifyAll(caption, authorId, postId, null, Set.of());
+        if (original != null) {
+            notifications.notify(original.author().id(), authorId, NotificationType.REMIX, postId, null, null, null);
+        }
         return queries.views(List.of(postId), authorId).getFirst();
+    }
+
+    /** 이 릴스를 리믹스한 릴스 */
+    public List<com.yangstagram.post.dto.PostDtos.GridItem> remixes(String shortcode, long viewerId) {
+        return queries.remixes(getVisible(shortcode, viewerId).id(), viewerId);
+    }
+
+    /** 리믹스 허용 바꾸기 (작성자만) */
+    @Transactional
+    public void setAllowRemix(String shortcode, long viewerId, boolean allow) {
+        PostRow row = getVisible(shortcode, viewerId);
+        if (row.author().id() != viewerId) throw ApiException.forbidden("NOT_AUTHOR", "작성자만 바꿀 수 있습니다.");
+        jdbc.update("update posts set allow_remix = :a where id = :id", Map.of("a", allow, "id", row.id()));
+    }
+
+    /** 구독자 전용은 구독 가격을 정한 계정만 */
+    private boolean subscribersOnly(long authorId, Boolean requested) {
+        if (!Boolean.TRUE.equals(requested)) return false;
+        Integer price = jdbc.queryForObject("select subscription_price from users where id = :id",
+                Map.of("id", authorId), Integer.class);
+        if (price == null) {
+            throw ApiException.badRequest("NO_SUBSCRIPTION", "구독 가격을 먼저 정해야 구독자 전용으로 올릴 수 있습니다.");
+        }
+        return true;
     }
 
     /** 릴스 등 조회 기록: 사람당 한 번만 센다 */
