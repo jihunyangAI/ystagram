@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { Map as MapIcon, MessageCirclePlus, Send } from 'lucide-react'
+import { Map as MapIcon, MessageCirclePlus, Pin, Send } from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
 import { Modal } from '../../components/Modal'
@@ -169,6 +169,8 @@ function preview(c: InboxItem, meId: number): string {
       return `${who}Blend 초대`
     case 'CALL':
       return `${who}통화`
+    case 'AUDIO':
+      return `${who}음성 메시지를 보냈습니다`
     case 'NOTE_REPLY':
       return `${who}노트에 답장: ${l.text ?? ''}`
     default:
@@ -200,6 +202,7 @@ function InboxRow({ c, active, meId }: { c: InboxItem; active: boolean; meId: nu
           <span className={clsx('flex gap-1 text-muted', c.unread && 'font-semibold text-text')}>
             <span className="truncate">{preview(c, meId)}</span>
             <span className="shrink-0">· {timeAgo(c.last.createdAt)}</span>
+            {c.pinned && <Pin size={12} aria-label="고정됨" className="shrink-0 rotate-45" />}
           </span>
         </span>
         {c.unread && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="안 읽음" />}

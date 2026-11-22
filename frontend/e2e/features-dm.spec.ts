@@ -33,7 +33,7 @@ test('DM: 새 그룹 대화 → 글·사진 → 반응 → 답장 → 수정 →
   await expect(bubble).toBeVisible()
 
   // 사진
-  await page.locator('input[type="file"]').last().setInputFiles(solidPng('dm.png', [30, 160, 120]))
+  await page.locator('input[type="file"]:not([aria-label])').last().setInputFiles(solidPng('dm.png', [30, 160, 120]))
   await expect(page.locator('img[src*="/media/"]').last()).toBeVisible()
 
   // 반응

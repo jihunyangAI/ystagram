@@ -467,7 +467,7 @@ export interface SavedOverview {
 
 export type DmFolder = 'PRIMARY' | 'GENERAL' | 'REQUEST'
 
-export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY' | 'BLEND_INVITE' | 'CALL'
+export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY' | 'BLEND_INVITE' | 'CALL' | 'AUDIO'
 
 export interface InboxItem {
   id: number
@@ -479,6 +479,8 @@ export interface InboxItem {
   unread: boolean
   online: boolean
   lastActiveAt: string | null
+  /** 받은 메시지함 맨 위에 고정 */
+  pinned: boolean
 }
 
 export interface DmUnread {
@@ -501,6 +503,12 @@ export interface ConversationView {
   members: DmMember[]
   folder: DmFolder
   myLastRead: number
+  /** 사라지는 메시지 모드 (1:1) */
+  vanishMode: boolean
+  /** 내 받은 메시지함에 고정 */
+  pinned: boolean
+  /** 고정한 메시지 (최대 3개, 최근 고정순) */
+  pins: MessageView[]
 }
 
 export interface SharedPost {
@@ -532,6 +540,13 @@ export interface MessageView {
   blend: { id: number; status: 'PENDING' | 'ACTIVE' } | null
   /** 통화 기록 메시지 */
   call: { id: number; video: boolean; status: CallStatus; durationSec: number | null } | null
+  pinned: boolean
+  /** 1회 보기 사진: 받는 사람 UNOPENED·OPENED, 보낸 사람 SENT·OPENED (media는 열 때만 받는다) */
+  viewOnce: { state: 'UNOPENED' | 'OPENED' | 'SENT' } | null
+  /** 사라지는 메시지 모드에서 보낸 메시지 */
+  vanish: boolean
+  /** 음성 메시지 길이 */
+  durationMs: number | null
 }
 
 export type CallStatus = 'RINGING' | 'ACTIVE' | 'ENDED' | 'MISSED' | 'DECLINED' | 'CANCELED'

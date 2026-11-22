@@ -118,8 +118,53 @@ public class DmController {
 
     @PostMapping(value = "/conversations/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public MessageView sendImage(@PathVariable long id, @RequestPart("file") MultipartFile file) {
-        return dm.sendImage(id, CurrentUser.requireId(), file);
+    public MessageView sendImage(@PathVariable long id, @RequestPart("file") MultipartFile file,
+                                 @RequestParam(defaultValue = "false") boolean viewOnce) {
+        return dm.sendImage(id, CurrentUser.requireId(), file, viewOnce);
+    }
+
+    @PostMapping(value = "/conversations/{id}/audio", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public MessageView sendAudio(@PathVariable long id, @RequestPart("file") MultipartFile file,
+                                 @RequestParam int durationMs) {
+        return dm.sendAudio(id, CurrentUser.requireId(), file, durationMs);
+    }
+
+    @PostMapping("/messages/{id}/open")
+    public MessageView open(@PathVariable long id) {
+        return dm.openViewOnce(id, CurrentUser.requireId());
+    }
+
+    @PutMapping("/messages/{id}/pin")
+    public MessageView pin(@PathVariable long id) {
+        return dm.pinMessage(id, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/messages/{id}/pin")
+    public MessageView unpin(@PathVariable long id) {
+        return dm.pinMessage(id, CurrentUser.requireId(), false);
+    }
+
+    @PostMapping("/messages/{id}/translate")
+    public DmDtos.Translation translate(@PathVariable long id) {
+        return dm.translate(id, CurrentUser.requireId());
+    }
+
+    @PutMapping("/conversations/{id}/pin")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void pinConversation(@PathVariable long id) {
+        dm.pinConversation(id, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/conversations/{id}/pin")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unpinConversation(@PathVariable long id) {
+        dm.pinConversation(id, CurrentUser.requireId(), false);
+    }
+
+    @PutMapping("/conversations/{id}/vanish")
+    public ConversationView vanish(@PathVariable long id, @RequestBody DmDtos.VanishRequest req) {
+        return dm.vanish(id, CurrentUser.requireId(), req.on());
     }
 
     @PutMapping("/conversations/{id}/read")

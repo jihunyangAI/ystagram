@@ -84,7 +84,7 @@ public class DmService {
         String f = folder == null ? "PRIMARY" : folder.toUpperCase();
         if (!FOLDERS.contains(f)) throw ApiException.badRequest("BAD_FOLDER", "알 수 없는 메시지함입니다.");
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select c.id, c.is_group, c.title, cm.folder, cm.last_read_message_id,
+                select c.id, c.is_group, c.title, cm.folder, cm.last_read_message_id, cm.pinned_at,
                        lm.id as msg_id, lm.sender_id, lm.kind, lm.body, lm.created_at as msg_at, lm.unsent_at
                 from conversation_members cm
                 join conversations c on c.id = cm.conversation_id
@@ -92,7 +92,7 @@ public class DmService {
                   select m.* from messages m where m.conversation_id = c.id order by m.id desc limit 1
                 ) lm on true
                 where cm.user_id = :me and cm.folder = :folder and lm.id is not null
-                order by c.last_message_at desc, c.id desc
+                order by cm.pinned_at desc nulls last, c.last_message_at desc, c.id desc
                 limit 100
                 """, Map.of("me", me, "folder", f));
         Map<Long, List<UserSummary>> members = otherMembers(me, rows.stream().map(r -> toLong(r.get("id"))).toList());
@@ -119,7 +119,8 @@ public class DmService {
             boolean unread = sender != me && msgId > toLong(r.get("last_read_message_id"));
             UserSummary single = !group && !others.isEmpty() ? others.getFirst() : null;
             items.add(new InboxItem(id, group, (String) r.get("title"), others, (String) r.get("folder"), last, unread,
-                    single != null && realtime.isOnline(single.id()), single == null ? null : lastActive.get(single.id())));
+                    single != null && realtime.isOnline(single.id()), single == null ? null : lastActive.get(single.id()),
+                    r.get("pinned_at") != null));
         }
         return items;
     }
@@ -228,7 +229,7 @@ public class DmService {
 
     public ConversationView conversation(long id, long me) {
         Map<String, Object> mine = membership(id, me);
-        Map<String, Object> c = jdbc.queryForMap("select is_group, title from conversations where id = :id",
+        Map<String, Object> c = jdbc.queryForMap("select is_group, title, vanish_mode from conversations where id = :id",
                 Map.of("id", id));
         List<Member> members = jdbc.query("""
                 select %s, cm.last_read_message_id, u.last_active_at,
@@ -244,7 +245,8 @@ public class DmService {
                     t == null ? null : t.toInstant());
         });
         return new ConversationView(id, (Boolean) c.get("is_group"), (String) c.get("title"), members,
-                (String) mine.get("folder"), toLong(mine.get("last_read_message_id")));
+                (String) mine.get("folder"), toLong(mine.get("last_read_message_id")), (Boolean) c.get("vanish_mode"),
+                mine.get("pinned_at") != null, pins(id, me));
     }
 
     /** 요청 수락 → 기본 메시지함으로 */
@@ -278,7 +280,9 @@ public class DmService {
                    su.id as s_id,
                    bl.status as bl_status,
                    cl.video as cl_video, cl.status as cl_status, cl.answered_at as cl_answered, cl.ended_at as cl_ended,
-                   r.id as r_id, r.body as r_body, r.kind as r_kind, r.unsent_at as r_unsent, ru.username as r_username
+                   r.id as r_id, r.body as r_body, r.kind as r_kind, r.unsent_at as r_unsent, ru.username as r_username,
+                   exists (select 1 from message_opens o where o.message_id = m.id and o.user_id = :me) as opened_by_me,
+                   exists (select 1 from message_opens o where o.message_id = m.id) as opened_by_any
             from messages m
             join users u on u.id = m.sender_id
             left join posts p on p.id = m.post_id
@@ -324,9 +328,7 @@ public class DmService {
                     reactions.computeIfAbsent(rs.getLong(1), k -> new ArrayList<>())
                             .add(new Reaction(rs.getLong(2), rs.getString(3)));
                 });
-        return list.stream().map(m -> new MessageView(m.id(), m.conversationId(), m.sender(), m.kind(), m.body(),
-                m.media(), m.post(), m.story(), m.replyTo(), m.createdAt(), m.edited(), m.unsent(),
-                reactions.getOrDefault(m.id(), List.of()), m.canEdit(), m.quote(), m.blend(), m.call())).toList();
+        return list.stream().map(m -> m.withReactions(reactions.getOrDefault(m.id(), List.of()))).toList();
     }
 
     private MessageView readMessage(ResultSet rs, long me, Instant now) throws SQLException {
@@ -334,8 +336,17 @@ public class DmService {
         boolean unsent = rs.getTimestamp("unsent_at") != null;
         Instant createdAt = rs.getTimestamp("created_at").toInstant();
 
+        boolean mine = sender.id() == me;
+        DmDtos.ViewOnce viewOnce = null;
+        boolean hideMedia = false;
+        if (rs.getBoolean("view_once")) {
+            String state = mine ? (rs.getBoolean("opened_by_any") ? "OPENED" : "SENT")
+                    : (rs.getBoolean("opened_by_me") ? "OPENED" : "UNOPENED");
+            viewOnce = new DmDtos.ViewOnce(state);
+            hideMedia = true; // 열기 요청(open)으로만 받는다
+        }
         Media media = null;
-        if (!unsent && rs.getString("media_url") != null) {
+        if (!unsent && !hideMedia && rs.getString("media_url") != null) {
             media = new Media(rs.getString("media_url"), rs.getInt("media_width"), rs.getInt("media_height"));
         }
         SharedPost post = null;
@@ -360,7 +371,6 @@ public class DmService {
                     : rs.getString("r_body") != null ? rs.getString("r_body") : kindLabel(rs.getString("r_kind"));
             replyTo = new ReplyTo(rs.getLong("r_id"), rs.getString("r_username"), text);
         }
-        boolean mine = sender.id() == me;
         return new MessageView(rs.getLong("id"), rs.getLong("conversation_id"), sender, rs.getString("kind"),
                 unsent ? null : rs.getString("body"), media, post, story, replyTo, createdAt,
                 rs.getTimestamp("edited_at") != null, unsent, List.of(),
@@ -369,7 +379,9 @@ public class DmService {
                 unsent ? null : rs.getString("quote"),
                 rs.getObject("blend_id") == null ? null
                         : new DmDtos.BlendRef(rs.getLong("blend_id"), rs.getString("bl_status")),
-                rs.getObject("call_id") == null ? null : callRef(rs));
+                rs.getObject("call_id") == null ? null : callRef(rs),
+                rs.getTimestamp("pinned_at") != null, viewOnce, rs.getBoolean("vanish"),
+                (Integer) rs.getObject("media_duration_ms"));
     }
 
     private static DmDtos.CallRef callRef(ResultSet rs) throws SQLException {
@@ -388,6 +400,7 @@ public class DmService {
             case "NOTE_REPLY" -> "노트 답장";
             case "BLEND_INVITE" -> "Blend 초대";
             case "CALL" -> "통화";
+            case "AUDIO" -> "음성 메시지";
             default -> "";
         };
     }
@@ -399,10 +412,144 @@ public class DmService {
     }
 
     @Transactional
-    public MessageView sendImage(long conversationId, long me, MultipartFile file) {
+    public MessageView sendImage(long conversationId, long me, MultipartFile file, boolean viewOnce) {
         membership(conversationId, me);
         StoredImage img = storage.saveImage(file);
-        return insert(conversationId, me, "IMAGE", null, img, null, null, null);
+        return insert(conversationId, me, "IMAGE", null, img.url(), img.width(), img.height(), null, null, null, null,
+                null, null, viewOnce, null);
+    }
+
+    public static final int MAX_VOICE_MS = 60_000;
+
+    /** 음성 메시지 (최대 1분) */
+    @Transactional
+    public MessageView sendAudio(long conversationId, long me, MultipartFile file, int durationMs) {
+        membership(conversationId, me);
+        if (durationMs <= 0 || durationMs > MAX_VOICE_MS + 1000) {
+            throw ApiException.badRequest("BAD_DURATION", "음성 메시지는 1분까지 보낼 수 있습니다.");
+        }
+        String url = storage.saveAudio(file).url();
+        return insert(conversationId, me, "AUDIO", null, url, null, null, null, null, null, null, null, null, false,
+                durationMs);
+    }
+
+    /** 1회 보기 미디어 열기: 받는 사람이 한 번만 받는다 */
+    @Transactional
+    public MessageView openViewOnce(long messageId, long me) {
+        Map<String, Object> m = jdbc.queryForList("""
+                select conversation_id, sender_id, view_once, media_url, media_width, media_height, unsent_at
+                from messages where id = :id
+                """, Map.of("id", messageId)).stream().findFirst()
+                .orElseThrow(() -> ApiException.notFound("메시지를 찾을 수 없습니다."));
+        long conversationId = toLong(m.get("conversation_id"));
+        membership(conversationId, me);
+        if (!Boolean.TRUE.equals(m.get("view_once")) || m.get("unsent_at") != null) {
+            throw ApiException.badRequest("NOT_VIEW_ONCE", "1회 보기 메시지가 아닙니다.");
+        }
+        if (toLong(m.get("sender_id")) == me) {
+            throw ApiException.forbidden("SENDER", "보낸 1회 보기 사진은 다시 볼 수 없습니다.");
+        }
+        int n = jdbc.update("""
+                insert into message_opens (message_id, user_id, opened_at) values (:id, :me, :now) on conflict do nothing
+                """, new MapSqlParameterSource("id", messageId).addValue("me", me)
+                .addValue("now", Timestamp.from(Instant.now(clock))));
+        if (n == 0) throw ApiException.badRequest("ALREADY_OPENED", "이미 본 사진입니다.");
+        MessageView view = message(messageId, me);
+        // 보낸 사람 화면의 "열어봄" 표시
+        realtime.send(memberIds(conversationId), "conversation:refresh", new DmDtos.PinEvent(conversationId));
+        return new MessageView(view.id(), view.conversationId(), view.sender(), view.kind(), view.body(),
+                new Media((String) m.get("media_url"), ((Number) m.get("media_width")).intValue(),
+                        ((Number) m.get("media_height")).intValue()),
+                view.post(), view.story(), view.replyTo(), view.createdAt(), view.edited(), view.unsent(),
+                view.reactions(), view.canEdit(), view.quote(), view.blend(), view.call(), view.pinned(),
+                view.viewOnce(), view.vanish(), view.durationMs());
+    }
+
+    public static final int MAX_PINNED_MESSAGES = 3;
+    public static final int MAX_PINNED_CHATS = 3;
+
+    /** 메시지 고정 (대화방마다 3개, 참여자 누구나) */
+    @Transactional
+    public MessageView pinMessage(long messageId, long me, boolean pin) {
+        Map<String, Object> m = jdbc.queryForList("select conversation_id, unsent_at from messages where id = :id",
+                Map.of("id", messageId)).stream().findFirst()
+                .orElseThrow(() -> ApiException.notFound("메시지를 찾을 수 없습니다."));
+        long conversationId = toLong(m.get("conversation_id"));
+        membership(conversationId, me);
+        if (pin) {
+            if (m.get("unsent_at") != null) throw ApiException.badRequest("UNSENT", "전송 취소한 메시지입니다.");
+            Integer n = jdbc.queryForObject("""
+                    select count(*) from messages where conversation_id = :c and pinned_at is not null and id <> :id
+                    """, Map.of("c", conversationId, "id", messageId), Integer.class);
+            if (n != null && n >= MAX_PINNED_MESSAGES) {
+                throw ApiException.badRequest("PIN_LIMIT", "메시지는 3개까지 고정할 수 있습니다. 먼저 하나를 해제하세요.");
+            }
+        }
+        jdbc.update(pin ? "update messages set pinned_at = coalesce(pinned_at, :now) where id = :id"
+                        : "update messages set pinned_at = null where id = :id",
+                new MapSqlParameterSource("id", messageId).addValue("now", Timestamp.from(Instant.now(clock))));
+        MessageView view = message(messageId, me);
+        realtime.send(memberIds(conversationId), "message:edit", view);
+        realtime.send(memberIds(conversationId), "conversation:refresh", new DmDtos.PinEvent(conversationId));
+        return view;
+    }
+
+    private List<MessageView> pins(long conversationId, long me) {
+        return readMessages(MESSAGE_SELECT + """
+                 where m.conversation_id = :c and m.pinned_at is not null and m.unsent_at is null
+                 order by m.pinned_at desc
+                """, new MapSqlParameterSource("c", conversationId).addValue("me", me), me);
+    }
+
+    /** 채팅방 고정: 내 받은 메시지함 맨 위 (3개까지) */
+    @Transactional
+    public void pinConversation(long conversationId, long me, boolean pin) {
+        membership(conversationId, me);
+        if (pin) {
+            Integer n = jdbc.queryForObject("""
+                    select count(*) from conversation_members where user_id = :me and pinned_at is not null
+                      and conversation_id <> :c
+                    """, Map.of("me", me, "c", conversationId), Integer.class);
+            if (n != null && n >= MAX_PINNED_CHATS) {
+                throw ApiException.badRequest("PIN_LIMIT", "채팅방은 3개까지 고정할 수 있습니다.");
+            }
+        }
+        jdbc.update(pin ? "update conversation_members set pinned_at = coalesce(pinned_at, :now) where conversation_id = :c and user_id = :me"
+                        : "update conversation_members set pinned_at = null where conversation_id = :c and user_id = :me",
+                new MapSqlParameterSource("c", conversationId).addValue("me", me)
+                        .addValue("now", Timestamp.from(Instant.now(clock))));
+    }
+
+    /**
+     * 배니시 모드(1:1만): 켜져 있는 동안 보낸 메시지는 모드를 끄면 사라진다.
+     * 켜고 끌 때 대화방에 안내 줄을 남기지 않고, 양쪽 화면에 실시간으로 알린다.
+     */
+    @Transactional
+    public ConversationView vanish(long conversationId, long me, boolean on) {
+        membership(conversationId, me);
+        Boolean group = jdbc.queryForObject("select is_group from conversations where id = :c",
+                Map.of("c", conversationId), Boolean.class);
+        if (Boolean.TRUE.equals(group)) {
+            throw ApiException.badRequest("GROUP", "사라지는 메시지는 1:1 대화에서만 쓸 수 있습니다.");
+        }
+        jdbc.update("update conversations set vanish_mode = :on where id = :c", Map.of("on", on, "c", conversationId));
+        if (!on) {
+            jdbc.update("delete from messages where conversation_id = :c and vanish", Map.of("c", conversationId));
+        }
+        realtime.send(memberIds(conversationId), "conversation:vanish", new DmDtos.VanishEvent(conversationId, on, me));
+        return conversation(conversationId, me);
+    }
+
+    /** 번역 보기 (가짜 사전 번역) */
+    public DmDtos.Translation translate(long messageId, long me) {
+        Map<String, Object> m = jdbc.queryForList("select conversation_id, body, unsent_at from messages where id = :id",
+                Map.of("id", messageId)).stream().findFirst()
+                .orElseThrow(() -> ApiException.notFound("메시지를 찾을 수 없습니다."));
+        membership(toLong(m.get("conversation_id")), me);
+        String body = (String) m.get("body");
+        if (body == null || m.get("unsent_at") != null) throw ApiException.badRequest("NO_TEXT", "번역할 글이 없습니다.");
+        FakeTranslator.Result r = FakeTranslator.translate(body);
+        return new DmDtos.Translation(r.text(), r.from(), r.to(), r.complete());
     }
 
     /** 게시물 공유: 받는 사람마다 1:1 대화방에 게시물 메시지(+선택 메모)를 보낸다 */
@@ -472,6 +619,14 @@ public class DmService {
 
     private MessageView insert(long conversationId, long me, String kind, String body, StoredImage img, Long postId,
                                Long storyId, Long replyToId, String quote, Long blendId, Long callId) {
+        return insert(conversationId, me, kind, body, img == null ? null : img.url(),
+                img == null ? null : img.width(), img == null ? null : img.height(), postId, storyId, replyToId, quote,
+                blendId, callId, false, null);
+    }
+
+    private MessageView insert(long conversationId, long me, String kind, String body, String mediaUrl, Integer width,
+                               Integer height, Long postId, Long storyId, Long replyToId, String quote, Long blendId,
+                               Long callId, boolean viewOnce, Integer durationMs) {
         membership(conversationId, me);
         requireCanSend(conversationId, me);
         if (replyToId != null) {
@@ -482,12 +637,14 @@ public class DmService {
         Timestamp now = Timestamp.from(Instant.now(clock));
         Long id = jdbc.queryForObject("""
                 insert into messages (conversation_id, sender_id, kind, body, media_url, media_width, media_height,
-                                      post_id, story_id, reply_to_id, created_at, quote, blend_id, call_id)
-                values (:c, :me, :kind, :body, :url, :w, :h, :post, :story, :reply, :now, :quote, :blend, :call)
+                                      post_id, story_id, reply_to_id, created_at, quote, blend_id, call_id,
+                                      view_once, media_duration_ms, vanish)
+                values (:c, :me, :kind, :body, :url, :w, :h, :post, :story, :reply, :now, :quote, :blend, :call,
+                        :once, :dur, (select vanish_mode from conversations where id = :c))
                 returning id
                 """, new MapSqlParameterSource("c", conversationId).addValue("me", me).addValue("kind", kind)
-                .addValue("body", body).addValue("url", img == null ? null : img.url())
-                .addValue("w", img == null ? null : img.width()).addValue("h", img == null ? null : img.height())
+                .addValue("body", body).addValue("url", mediaUrl)
+                .addValue("w", width).addValue("h", height).addValue("once", viewOnce).addValue("dur", durationMs)
                 .addValue("post", postId).addValue("story", storyId).addValue("reply", replyToId)
                 .addValue("now", now).addValue("quote", quote).addValue("blend", blendId)
                 .addValue("call", callId), Long.class);
@@ -616,7 +773,7 @@ public class DmService {
 
     private Map<String, Object> membership(long conversationId, long me) {
         return jdbc.queryForList("""
-                select folder, last_read_message_id from conversation_members
+                select folder, last_read_message_id, pinned_at from conversation_members
                 where conversation_id = :c and user_id = :me
                 """, Map.of("c", conversationId, "me", me)).stream().findFirst()
                 .orElseThrow(() -> ApiException.notFound("대화방을 찾을 수 없습니다."));

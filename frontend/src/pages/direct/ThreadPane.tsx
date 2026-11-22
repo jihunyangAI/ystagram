@@ -8,6 +8,8 @@ import {
   ChevronLeft,
   CornerUpLeft,
   ImageIcon,
+  Info,
+  MoreHorizontal,
   Pencil,
   Phone,
   PhoneMissed,
@@ -28,6 +30,17 @@ import type { ConversationView, MessageView, ScheduledMessage, UserSummary } fro
 import { fromLocalInput, laterInput, scheduleLabel } from '../../lib/datetime'
 import { conversationName } from './DirectPage'
 import { CALL_STATUS_LABEL, formatDuration, startCall } from '../../components/call/CallManager'
+import {
+  MessageMore,
+  PinnedBar,
+  ThreadInfoSheet,
+  TranslationLine,
+  VanishBanner,
+  ViewOnceBubble,
+  ViewOnceButton,
+  VoiceBubble,
+  VoiceRecorder,
+} from './DmExtras'
 
 const REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍']
 const GROUP_GAP_MS = 10 * 60_000
@@ -42,6 +55,7 @@ export function ThreadPane({ id, me }: { id: number; me: UserSummary }) {
   const [replyTo, setReplyTo] = useState<MessageView | null>(null)
   const [editing, setEditing] = useState<MessageView | null>(null)
   const [unsending, setUnsending] = useState<MessageView | null>(null)
+  const [info, setInfo] = useState(false)
   const actions = useMessageActions()
 
   // 최근 메시지가 pages[0]의 맨 앞 → 화면에는 오래된 순으로
@@ -144,7 +158,16 @@ export function ThreadPane({ id, me }: { id: number; me: UserSummary }) {
             </button>
           </>
         )}
+        <button aria-label="대화 정보" title="대화 정보" className={clsx('p-1.5', !single && 'ml-auto')} onClick={() => setInfo(true)}>
+          <Info size={22} />
+        </button>
       </header>
+      {c.vanishMode && <VanishBanner />}
+      <PinnedBar
+        c={c}
+        onJump={(mid) => document.getElementById(`msg-${mid}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })}
+      />
+      <ThreadInfoSheet c={c} open={info} onClose={() => setInfo(false)} />
 
       <div ref={scroller} onScroll={onScroll} className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3 py-3 md:px-5">
         <div className="flex flex-col gap-0.5">
@@ -155,7 +178,7 @@ export function ThreadPane({ id, me }: { id: number; me: UserSummary }) {
             const gap = !prev || new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > GROUP_GAP_MS
             const sameSender = prev && prev.sender.id === m.sender.id && !gap
             return (
-              <div key={m.id}>
+              <div key={m.id} id={`msg-${m.id}`}>
                 {gap && (
                   <p className="py-3 text-center text-xs text-muted">
                     {new Date(m.createdAt).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -284,6 +307,8 @@ function Bubble({
   onReact: (emoji: string | null) => void
 }) {
   const [picker, setPicker] = useState(false)
+  const [more, setMore] = useState(false)
+  const [translated, setTranslated] = useState<string | null>(null)
   const myReaction = m.reactions.find((r) => r.userId === meId)?.emoji ?? null
 
   const content = m.unsent ? (
@@ -353,7 +378,9 @@ function Bubble({
           <span className="rounded-xl border border-border px-3 py-2 text-xs text-muted">스토리를 더 이상 볼 수 없습니다</span>
         )
       )}
-      {m.media && (
+      {m.viewOnce && <ViewOnceBubble m={m} mine={mine} />}
+      {m.kind === 'AUDIO' && <VoiceBubble m={m} mine={mine} />}
+      {m.media && m.kind !== 'AUDIO' && (
         <a href={m.media.url} target="_blank" rel="noreferrer">
           <img
             src={m.media.url}
@@ -374,7 +401,12 @@ function Bubble({
           {m.body}
         </span>
       )}
-      {m.edited && <span className="px-1 text-[11px] text-muted">수정됨</span>}
+      {translated && <TranslationLine text={translated} />}
+      {(m.edited || m.pinned) && (
+        <span className="px-1 text-[11px] text-muted">
+          {[m.pinned && '고정됨', m.edited && '수정됨'].filter(Boolean).join(' · ')}
+        </span>
+      )}
     </div>
   )
 
@@ -412,6 +444,10 @@ function Bubble({
               <Undo2 size={16} />
             </button>
           )}
+          <button aria-label="메시지 더 보기" className="rounded-full p-1 text-muted hover:bg-surface-2" onClick={() => setMore(true)}>
+            <MoreHorizontal size={16} />
+          </button>
+          <MessageMore m={m} open={more} onClose={() => setMore(false)} onTranslated={setTranslated} />
           {picker && (
             <div className={clsx('absolute bottom-8 z-20 flex gap-1 rounded-full border border-border bg-bg px-2 py-1 shadow-lg', mine ? 'right-0' : 'left-0')}>
               {REACTIONS.map((e) => (
@@ -602,6 +638,8 @@ function Composer({
             <button type="button" aria-label="사진 보내기" disabled={image.isPending} onClick={() => file.current?.click()} className="p-1">
               <ImageIcon size={22} />
             </button>
+            <ViewOnceButton id={id} />
+            <VoiceRecorder id={id} />
           </>
         )}
       </form>

@@ -81,6 +81,38 @@ public class MediaStorage {
         return new StoredVideo("/media/u/" + folder + "/" + name + ext);
     }
 
+    public static final long MAX_AUDIO_BYTES = 3L * 1024 * 1024;
+
+    /** 음성 메시지: 브라우저가 녹음한 그대로 저장 (WebM·Ogg·MP4 오디오) */
+    public StoredVideo saveAudio(MultipartFile file) {
+        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
+        int semi = type.indexOf(';');
+        if (semi >= 0) type = type.substring(0, semi).strip();
+        String ext = switch (type) {
+            case "audio/webm", "video/webm" -> ".webm";
+            case "audio/ogg" -> ".ogg";
+            case "audio/mp4", "audio/m4a", "audio/x-m4a" -> ".m4a";
+            case "audio/mpeg" -> ".mp3";
+            default -> throw ApiException.badRequest("UNSUPPORTED_AUDIO", "녹음 파일 형식을 알 수 없습니다.");
+        };
+        if (file.getSize() == 0 || file.getSize() > MAX_AUDIO_BYTES) {
+            throw ApiException.badRequest("BAD_AUDIO", "녹음 파일이 비어 있거나 너무 큽니다.");
+        }
+        LocalDate today = LocalDate.now();
+        String folder = "%d/%02d".formatted(today.getYear(), today.getMonthValue());
+        String name = UUID.randomUUID().toString().replace("-", "");
+        Path dir = props.uploadDir().resolve(folder);
+        try {
+            Files.createDirectories(dir);
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, dir.resolve(name + ext));
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return new StoredVideo("/media/u/" + folder + "/" + name + ext);
+    }
+
     StoredImage save(BufferedImage source) {
         BufferedImage full = resize(source, MAX_SIDE);
         BufferedImage thumb = resizeToWidth(full, THUMB_WIDTH);

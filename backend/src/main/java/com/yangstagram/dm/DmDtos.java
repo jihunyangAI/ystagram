@@ -12,7 +12,7 @@ public final class DmDtos {
 
     /** 받은 메시지함 한 줄 */
     public record InboxItem(long id, boolean isGroup, String title, List<UserSummary> members, String folder,
-                            LastMessage last, boolean unread, boolean online, Instant lastActiveAt) {
+                            LastMessage last, boolean unread, boolean online, Instant lastActiveAt, boolean pinned) {
     }
 
     public record LastMessage(long id, long senderId, String kind, String text, Instant createdAt) {
@@ -23,7 +23,7 @@ public final class DmDtos {
 
     /** 대화방 머리 정보 */
     public record ConversationView(long id, boolean isGroup, String title, List<Member> members, String folder,
-                                   long myLastRead) {
+                                   long myLastRead, boolean vanishMode, boolean pinned, List<MessageView> pins) {
     }
 
     /** 대화 상대. lastReadMessageId로 "읽음" 표시를 만든다 */
@@ -33,7 +33,32 @@ public final class DmDtos {
     public record MessageView(long id, long conversationId, UserSummary sender, String kind, String body,
                               Media media, SharedPost post, SharedStory story, ReplyTo replyTo,
                               Instant createdAt, boolean edited, boolean unsent, List<Reaction> reactions,
-                              boolean canEdit, String quote, BlendRef blend, CallRef call) {
+                              boolean canEdit, String quote, BlendRef blend, CallRef call,
+                              boolean pinned, ViewOnce viewOnce, boolean vanish, Integer durationMs) {
+
+        MessageView withReactions(List<Reaction> r) {
+            return new MessageView(id, conversationId, sender, kind, body, media, post, story, replyTo, createdAt, edited,
+                    unsent, r, canEdit, quote, blend, call, pinned, viewOnce, vanish, durationMs);
+        }
+    }
+
+    /**
+     * 1회 보기 미디어 상태. 받는 사람: UNOPENED(열 수 있음) / OPENED(이미 봄).
+     * 보낸 사람: SENT(아직 아무도 안 봄) / OPENED(누군가 봄). 보낸 사람과 이미 연 사람에게는 media가 비어 있다
+     */
+    public record ViewOnce(String state) {
+    }
+
+    public record Translation(String text, String from, String to, boolean complete) {
+    }
+
+    public record VanishRequest(boolean on) {
+    }
+
+    public record VanishEvent(long conversationId, boolean on, long by) {
+    }
+
+    public record PinEvent(long conversationId) {
     }
 
     /** 통화 기록 메시지 (CALL). durationSec는 연결된 통화만 */

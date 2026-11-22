@@ -12,6 +12,8 @@ export interface RealtimeEvent {
     | 'message:edit'
     | 'message:unsend'
     | 'message:read'
+    | 'conversation:refresh'
+    | 'conversation:vanish'
     | 'typing'
     | 'story:new'
     | 'channel:new'

@@ -84,9 +84,27 @@ export function RealtimeBridge({ meId }: { meId: number }) {
         }
         break
       }
-      case 'message:edit':
-        upsertMessage(qc, event.data as MessageView)
+      case 'message:edit': {
+        const m = event.data as MessageView
+        // 1회 보기 상태는 보는 사람마다 달라서 그대로 덮어쓰지 않고 다시 불러온다
+        if (m.viewOnce) qc.invalidateQueries({ queryKey: ['messages', m.conversationId] })
+        else upsertMessage(qc, m)
         break
+      }
+      case 'conversation:refresh': {
+        const { conversationId } = event.data as { conversationId: number }
+        qc.invalidateQueries({ queryKey: ['conversation', conversationId] })
+        qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+        break
+      }
+      case 'conversation:vanish': {
+        const { conversationId, on, by } = event.data as { conversationId: number; on: boolean; by: number }
+        qc.invalidateQueries({ queryKey: ['conversation', conversationId] })
+        qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+        qc.invalidateQueries({ queryKey: ['inbox'] })
+        if (by !== meId) toast(on ? '상대방이 사라지는 메시지를 켰습니다' : '상대방이 사라지는 메시지를 껐습니다')
+        break
+      }
       case 'message:unsend': {
         const { conversationId, messageId } = event.data as { conversationId: number; messageId: number }
         markUnsent(qc, conversationId, messageId)
