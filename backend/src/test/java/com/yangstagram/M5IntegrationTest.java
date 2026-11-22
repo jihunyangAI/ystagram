@@ -150,6 +150,10 @@ class M5IntegrationTest {
         postJson("/api/lab/moderation/POST/" + postId, new MockHttpSession(), "{\"action\":\"UNSUSPEND\"}")
                 .andExpect(status().isNoContent());
         mvc.perform(get("/api/users/" + owner).session(loginAs(reporters[1]))).andExpect(status().isOk());
+
+        // 신고가 없는 대상을 처리하려 하면 500이 아니라 404 (max()가 NULL 한 줄을 돌려주던 NPE)
+        postJson("/api/lab/moderation/POST/999999999", new MockHttpSession(), "{\"action\":\"DISMISS\"}")
+                .andExpect(status().isNotFound());
     }
 
     // ------------------------------------------------------------ 2단계 인증
@@ -160,6 +164,9 @@ class M5IntegrationTest {
         postJson("/api/auth/signup", s, """
                 {"email":"tfa@example.com","fullName":"이단계","username":"tfa.user","password":"secret1","birthDate":"1990-01-01"}
                 """).andExpect(status().isCreated());
+        // 설정 전(비밀값 NULL)에 Lab 코드를 물으면 500이 아니라 400 (E2E에서 찾은 NPE)
+        mvc.perform(get("/api/lab/2fa/tfa.user/code")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NO_SECRET"));
         String setup = body(postJson("/api/me/2fa/setup", s, "{}").andExpect(status().isOk()));
         String secret = JsonPath.read(setup, "$.secret");
         assertThat((String) JsonPath.read(setup, "$.otpauthUri")).startsWith("otpauth://totp/Yangstagram:tfa.user");

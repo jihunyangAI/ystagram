@@ -188,7 +188,9 @@ public class ModerationService {
         Instant now = Instant.now(clock);
         Long owner = jdbc.queryForList("""
                 select max(target_user_id) from reports where target_type = :t and target_id = :id
-                """, Map.of("t", type, "id", targetId), Long.class).stream().findFirst().orElse(null);
+                """, Map.of("t", type, "id", targetId), Long.class)
+                // max()는 신고가 없어도 한 줄(NULL)을 돌려주므로 null을 걸러야 404가 된다 (안 그러면 NPE → 500)
+                .stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
         if (owner == null) throw ApiException.notFound("신고된 대상을 찾을 수 없습니다.");
         String status = switch (action) {
             case "REMOVE" -> {

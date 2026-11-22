@@ -109,8 +109,9 @@ public class TwoFactorService {
     }
 
     private String secret(long userId) {
+        // 설정 전이면 컬럼 값이 NULL → 목록에 null이 들어 있어 findFirst()가 NPE를 낸다 (그래서 null을 거른다)
         return jdbc.queryForList("select totp_secret from users where id = :id", Map.of("id", userId), String.class)
-                .stream().findFirst().orElse(null);
+                .stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
 
     private List<String> newBackupCodes(long me) {

@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
@@ -138,7 +139,8 @@ class PostAndFeedIntegrationTest {
     // ------------------------------------------------------------ 피드
 
     @Test
-    void 피드는_팔로우한_사람과_내_글만_최신순으로_이어서_보여준다() throws Exception {
+    @SuppressWarnings("unchecked")
+    void 피드는_팔로우한_사람과_내_글_팔로우한_사람의_리포스트와_공동_작업만_최신순으로_보여준다() throws Exception {
         String username = activeUser();
         Long me = jdbc.queryForObject("select id from users where username = ?", Long.class, username);
         Set<Long> allowed = new HashSet<>(jdbc.queryForList(
@@ -153,12 +155,19 @@ class PostAndFeedIntegrationTest {
             String body = mvc.perform(get("/api/feed").param("mode", "following")
                             .param("cursor", cursor == null ? "" : cursor).session(session))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-            List<Number> authors = JsonPath.read(body, "$.items[*].author.id");
             List<String> codes = JsonPath.read(body, "$.items[*].shortcode");
-            List<String> times = JsonPath.read(body, "$.items[*].createdAt");
-            assertThat(authors).allMatch(a -> allowed.contains(a.longValue()));
-            for (String t : times) {
-                Instant at = Instant.parse(t);
+            List<Map<String, Object>> items = JsonPath.read(body, "$.items[*]");
+            for (Map<String, Object> item : items) {
+                // 들어올 수 있는 이유: 팔로우한 사람(또는 나)의 글 / 팔로우한 사람이 리포스트한 글 / 팔로우한 사람과의 공동 작업
+                long author = ((Number) ((Map<?, ?>) item.get("author")).get("id")).longValue();
+                Map<?, ?> repost = (Map<?, ?>) item.get("repost");
+                Long reposter = repost == null ? null : ((Number) ((Map<?, ?>) repost.get("by")).get("id")).longValue();
+                List<Map<String, Object>> collabs = (List<Map<String, Object>>) item.get("collaborators");
+                boolean collab = collabs != null && collabs.stream().anyMatch(c -> allowed.contains(((Number) c.get("id")).longValue()));
+                assertThat(allowed.contains(author) || (reposter != null && allowed.contains(reposter)) || collab)
+                        .as("피드에 들어온 이유가 있어야 함: %s", item.get("shortcode")).isTrue();
+                // 정렬 기준은 올린 시각, 리포스트는 리포스트한 시각
+                Instant at = Instant.parse((String) (repost != null ? repost.get("createdAt") : item.get("createdAt")));
                 assertThat(at).isBeforeOrEqualTo(previous);
                 previous = at;
             }
