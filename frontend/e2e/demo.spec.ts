@@ -136,7 +136,10 @@ test('4. 비공개 계정 C에 팔로우 요청 → 승인 전에는 게시물�
 test('5. A·B 두 브라우저 DM: 실시간 수신, 입력 중, 읽음, 15분 뒤 수정 불가', async ({ browser }) => {
   const asA = await apiAs(A)
   const conv = await call<{ id: number }>(asA, 'POST', '/api/direct/conversations', { usernames: [B] })
-  await asA.dispose()
+  // 가짜 계정의 자동 응답 봇이 먼저 답하면 B의 메시지가 마지막이 아니어서 "읽음"이 안 붙는다 → 이 시나리오 동안 끈다
+  const flags = await call<Record<string, unknown>>(asA, 'GET', '/api/lab/flags')
+  await call(asA, 'PUT', '/api/lab/flags', { ...flags, autoReply: false })
+  cleanups.push(() => call(asA, 'PUT', '/api/lab/flags', flags).finally(() => asA.dispose()))
 
   const pageA = await newUserPage(browser, A, `/direct/t/${conv.id}`)
   const pageB = await newUserPage(browser, B, `/direct/t/${conv.id}`)

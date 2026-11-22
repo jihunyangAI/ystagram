@@ -177,9 +177,9 @@ export function CreateReelPage() {
           className="flex aspect-[9/16] w-full max-w-[320px] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border text-muted hover:bg-surface-2"
         >
           <Film size={48} strokeWidth={1.4} />
-          <span className="text-sm">영상을 선택하거나 끌어다 놓으세요</span>
+          <span className="text-sm">영상을 선택하<span className="hidden md:inline">거나 끌어다 놓으</span>세요</span>
           <span className="text-xs">MP4·WebM, 20분·200MB까지</span>
-          <span className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white">컴퓨터에서 선택</span>
+          <span className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white"><span className="md:hidden">기기에서 선택</span><span className="hidden md:inline">컴퓨터에서 선택</span></span>
         </button>
         </div>
           <button className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-surface-2" onClick={() => setRecording(true)}>

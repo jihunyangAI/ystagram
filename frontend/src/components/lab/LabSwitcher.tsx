@@ -39,13 +39,14 @@ export function LabSwitcher() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className={`fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white shadow-lg hover:bg-primary-hover ${
-          // DM·스토리·릴스 화면에서는 입력창을 가리지 않도록 위로, Lab은 데스크톱에서만 위로(결과 표를 가리지 않게)
+        className={`fixed z-40 flex h-11 items-center justify-center bg-primary text-white shadow-lg hover:bg-primary-hover ${
+          // DM·스토리·릴스는 화면 구석마다 버튼이 있어서, 모바일에서는 왼쪽 가장자리의 작은 탭으로(데스크톱은 오른쪽 위).
+          // Lab은 데스크톱에서만 위로(결과 표를 가리지 않게)
           ['/direct', '/stories', '/reels'].some((p) => pathname.startsWith(p))
-            ? 'top-24 md:top-12'
+            ? 'top-1/2 left-0 w-6 -translate-y-1/2 rounded-r-full opacity-70 hover:opacity-100 md:top-12 md:right-4 md:left-auto md:w-11 md:translate-y-0 md:rounded-full md:opacity-100'
             : pathname.startsWith('/lab')
-              ? 'bottom-20 md:top-12 md:bottom-auto'
-              : 'bottom-20 md:bottom-6'
+              ? 'right-4 bottom-20 w-11 rounded-full md:top-12 md:bottom-auto'
+              : 'right-4 bottom-20 w-11 rounded-full md:bottom-6'
         }`}
         aria-label="Lab: 계정 전환"
         title="Lab: 계정 전환"

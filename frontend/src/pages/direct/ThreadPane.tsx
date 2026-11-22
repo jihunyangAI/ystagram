@@ -731,13 +731,15 @@ function BlendButton({ conversationId }: { conversationId: number }) {
   })
   return (
     <button
-      className="ml-auto flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold hover:bg-surface-2"
+      className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-semibold whitespace-nowrap hover:bg-surface-2"
       title="두 분을 위한 릴스 피드"
+      aria-label={data?.id ? 'Blend' : 'Blend 초대'}
       onClick={() => (data?.id ? navigate(`/direct/blend/${data.id}`) : invite.mutate())}
       disabled={invite.isPending}
     >
       <Blend size={14} className="text-primary" />
-      {data?.id ? 'Blend' : 'Blend 초대'}
+      {/* 좁은 화면에서는 이름이 잘리지 않도록 "초대"를 뺀다 */}
+      Blend{!data?.id && <span className="hidden sm:inline"> 초대</span>}
     </button>
   )
 }

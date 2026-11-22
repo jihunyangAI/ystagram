@@ -113,7 +113,7 @@ export function HomePage() {
           <div className="mt-6">
             <Suggestions title="회원님을 위한 추천" compact />
           </div>
-          <p className="mt-8 px-4 text-xs text-muted">© 2026 Yangstagram · 연구용 데모 · 모든 사용자와 게시물은 가짜입니다</p>
+          <p className="mt-8 px-4 text-xs break-keep text-muted">© 2026 Yangstagram · 연구용 데모 · 모든 사용자와 게시물은 가짜입니다</p>
         </div>
       </aside>
     </div>

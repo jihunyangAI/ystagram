@@ -232,8 +232,8 @@ export function CreateStoryPage() {
           className="flex aspect-[9/16] w-full max-w-[360px] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border text-muted hover:bg-surface-2"
         >
           <ImagePlus size={48} strokeWidth={1.4} />
-          <span className="text-sm">사진을 선택하거나 끌어다 놓으세요</span>
-          <span className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white">컴퓨터에서 선택</span>
+          <span className="text-sm">사진을 선택하<span className="hidden md:inline">거나 끌어다 놓으</span>세요</span>
+          <span className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white"><span className="md:hidden">기기에서 선택</span><span className="hidden md:inline">컴퓨터에서 선택</span></span>
         </button>
       ) : (
         <div className="flex w-full flex-col items-center gap-4 md:flex-row md:items-start md:justify-center">

@@ -259,10 +259,10 @@ export function CreatePostPage() {
             )}
           >
             <ImagePlus size={72} strokeWidth={1} />
-            <p className="text-xl">사진을 여기에 끌어다 놓으세요</p>
+            <p className="text-xl">사진을 <span className="md:hidden">선택하세요</span><span className="hidden md:inline">여기에 끌어다 놓으세요</span></p>
             <p className="text-sm text-muted">JPG·PNG, 최대 {MAX_FILES}장</p>
             <button className="btn btn-primary" onClick={() => fileInput.current?.click()}>
-              컴퓨터에서 선택
+              <span className="md:hidden">기기에서 선택</span><span className="hidden md:inline">컴퓨터에서 선택</span>
             </button>
           </div>
         )}

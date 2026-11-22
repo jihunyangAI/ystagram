@@ -90,6 +90,10 @@ function PostDetail({ post }: { post: PostView }) {
 
   return (
     <article className="flex flex-col md:flex-row md:overflow-hidden md:rounded md:border md:border-border">
+      {/* 모바일: 피드처럼 작성자 줄이 사진 위 */}
+      <div className="md:hidden">
+        <PostHeader post={post} onMenu={() => setMenu(true)} />
+      </div>
       <div className="flex items-center bg-black md:w-[58%] md:shrink-0">
         <MediaCarousel
           media={post.media}
@@ -102,17 +106,14 @@ function PostDetail({ post }: { post: PostView }) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col md:max-h-[90dvh] md:min-h-[480px]">
-        <div className="md:hidden">
-          <PostHeader post={post} onMenu={() => setMenu(true)} />
-        </div>
         <div className="hidden border-b border-border px-4 md:block">
           <PostHeader post={post} onMenu={() => setMenu(true)} />
         </div>
 
-        <div className="pt-2">
+        <div className="pt-2 empty:hidden">
           <CollabInviteBar post={post} />
         </div>
-        <div className="md:px-4">
+        <div className="empty:hidden md:px-4">
           <PostCommerceBar post={post} />
         </div>
 
