@@ -10,10 +10,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/media': 'http://localhost:8080',
+      // 백엔드는 127.0.0.1에서만 받는다 (localhost가 ::1로 풀리면 연결이 안 되므로 주소를 직접 쓴다)
+      '/api': 'http://127.0.0.1:8080',
+      '/media': 'http://127.0.0.1:8080',
       // 실시간 이벤트 (DM·알림). 세션 쿠키가 함께 넘어간다
-      '/ws': { target: 'ws://localhost:8080', ws: true },
+      '/ws': { target: 'ws://127.0.0.1:8080', ws: true },
     },
   },
 })
