@@ -19,9 +19,13 @@ export default defineConfig({
     ...devices['Pixel 7'],
     viewport: { width: 390, height: 844 },
     channel: 'chrome',
+    // 라이브·통화 시험용: 실제 카메라 대신 Chrome의 가짜 카메라·마이크 (권한 창 없이)
+    launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
     trace: 'retain-on-failure',
+    // 버튼을 못 찾으면 테스트 시간(90초)을 다 쓰지 않고 빨리 실패
+    actionTimeout: 15_000,
     screenshot: 'only-on-failure',
   },
   globalTeardown: './e2e/teardown.ts',

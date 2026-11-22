@@ -2,6 +2,7 @@
 import { expect, request as pwRequest } from '@playwright/test'
 import type { APIRequestContext, Browser, Page } from '@playwright/test'
 import { deflateSync } from 'node:zlib'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -163,4 +164,93 @@ export async function expectNoHorizontalScroll(page: Page) {
     return { scroll: doc.scrollWidth, client: doc.clientWidth }
   })
   expect(overflow.scroll, `가로 스크롤 ${overflow.scroll} > ${overflow.client}`).toBeLessThanOrEqual(overflow.client)
+}
+
+/** 페이지의 콘솔 오류·잡히지 않은 예외·서버 오류(5xx)를 모은다. 4xx GET은 따로 (경고용) */
+export interface Watch {
+  errors: string[]
+  warnings: string[]
+}
+
+const BENIGN = [
+  /favicon/,
+  /play\(\) (request|failed)/i, // 자동 재생이 막힌 영상
+  /The play\(\) request was interrupted/,
+  /AbortError/,
+  /Download the React DevTools/,
+  /net::ERR_ABORTED/, // 페이지를 떠나며 취소된 요청
+]
+
+export function watch(page: Page, label = ''): Watch {
+  const w: Watch = { errors: [], warnings: [] }
+  const tag = (s: string) => `${label ? `[${label}] ` : ''}${page.url().replace(BASE, '')} → ${s}`
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return
+    const text = m.text()
+    if (BENIGN.some((r) => r.test(text))) return
+    // 4xx·5xx 응답에 대해 브라우저가 찍는 "Failed to load resource"는 아래 response에서 따로 판단
+    if (/Failed to load resource: the server responded with a status of 4\d\d/.test(text)) return
+    w.errors.push(tag(`console: ${text.slice(0, 300)}`))
+  })
+  page.on('pageerror', (e) => w.errors.push(tag(`예외: ${e.message.slice(0, 300)}`)))
+  page.on('response', (r) => {
+    const url = r.url()
+    if (!url.includes('/api/') && !url.includes('/media/')) return
+    const s = r.status()
+    if (s >= 500) w.errors.push(tag(`${r.request().method()} ${url.replace(BASE, '')} → ${s}`))
+    else if (s >= 400 && r.request().method() === 'GET' && s !== 401) w.warnings.push(tag(`GET ${url.replace(BASE, '')} → ${s}`))
+  })
+  return w
+}
+
+export function expectClean(w: Watch) {
+  if (w.warnings.length) console.log('  경고(4xx GET):\n   ' + [...new Set(w.warnings)].join('\n   '))
+  expect(w.errors, '콘솔 오류·예외·5xx').toEqual([])
+}
+
+/** 테스트 대상을 고를 때만 쓰는 읽기 전용 SQL (개발 DB 컨테이너) */
+export function sql(query: string): string[][] {
+  const out = execFileSync('docker', ['exec', 'yangstagram-postgres', 'psql', '-U', 'yangstagram', '-d', 'yangstagram', '-tA', '-F', '\t', '-c', query], {
+    encoding: 'utf8',
+  })
+  return out
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => l.split('\t'))
+}
+
+/** API로 사진 한 장짜리 게시물을 올린다 (준비용). 돌려주는 값은 shortcode */
+export async function createPost(ctx: APIRequestContext, caption: string, extra: Record<string, unknown> = {}): Promise<string> {
+  const { readFileSync } = await import('node:fs')
+  const state = await ctx.storageState()
+  const xsrf = decodeURIComponent(state.cookies.find((c) => c.name === 'XSRF-TOKEN')?.value ?? '')
+  const res = await ctx.post('/api/posts', {
+    headers: { 'X-XSRF-TOKEN': xsrf },
+    multipart: {
+      files: { name: 'p.png', mimeType: 'image/png', buffer: readFileSync(solidPng(`post-${Date.now()}.png`, [90, 140, 200])) },
+      data: { name: 'data.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ caption, altTexts: [''], ...extra })) },
+    },
+  })
+  if (!res.ok()) throw new Error(`게시물 만들기 실패 ${res.status()} ${await res.text()}`)
+  return ((await res.json()) as { shortcode: string }).shortcode
+}
+
+/** API로 스토리를 올린다 (준비용). 돌려주는 값은 스토리 id */
+export async function createStory(
+  ctx: APIRequestContext,
+  data: { audience?: 'PUBLIC' | 'CLOSE_FRIENDS'; stickers?: unknown[]; altText?: string } = {},
+): Promise<number> {
+  const { readFileSync } = await import('node:fs')
+  const state = await ctx.storageState()
+  const xsrf = decodeURIComponent(state.cookies.find((c) => c.name === 'XSRF-TOKEN')?.value ?? '')
+  const res = await ctx.post('/api/stories', {
+    headers: { 'X-XSRF-TOKEN': xsrf },
+    multipart: {
+      file: { name: 's.png', mimeType: 'image/png', buffer: readFileSync(solidPng(`story-${Date.now()}.png`, [120, 60, 200], 180, 320)) },
+      data: { name: 'd.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ audience: 'PUBLIC', stickers: [], ...data })) },
+    },
+  })
+  if (!res.ok()) throw new Error(`스토리 만들기 실패 ${res.status()} ${await res.text()}`)
+  return ((await res.json()) as { id: number }).id
 }

@@ -14,7 +14,23 @@ export function useDmUnread(enabled = true) {
 }
 
 export function useConversation(id: number) {
-  return useQuery({ queryKey: ['conversation', id], queryFn: () => api.get<ConversationView>(`/api/direct/conversations/${id}`) })
+  return useQuery({
+    queryKey: ['conversation', id],
+    queryFn: () => api.get<ConversationView>(`/api/direct/conversations/${id}`),
+    // 다시 불러온 응답이 그사이 도착한 "읽음" 실시간 이벤트보다 오래된 값일 수 있다 (메시지를 보낸 직후 상대가 바로 읽은 경우).
+    // 읽은 위치는 뒤로 가지 않으므로 사람마다 큰 값을 남긴다
+    structuralSharing: (old, next) => mergeReads(old as ConversationView | undefined, next as ConversationView),
+  })
+}
+
+export function mergeReads(old: ConversationView | undefined, next: ConversationView): ConversationView {
+  if (!old || old.id !== next.id) return next
+  const before = new Map(old.members.map((m) => [m.user.id, m.lastReadMessageId]))
+  return {
+    ...next,
+    myLastRead: Math.max(old.myLastRead, next.myLastRead),
+    members: next.members.map((m) => ({ ...m, lastReadMessageId: Math.max(m.lastReadMessageId, before.get(m.user.id) ?? 0) })),
+  }
 }
 
 /** 최근 메시지부터 30개씩. pages[0]이 가장 최근 */

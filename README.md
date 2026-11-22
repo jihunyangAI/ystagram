@@ -77,11 +77,12 @@ cd backend
 cd frontend
 npx tsc -b            # 타입 검사
 npm test              # 화면 단위 테스트 (Vitest)
-npm run e2e           # E2E (Playwright): 데모 시나리오 7개 + 360px·키보드·응답 시간
+npm run e2e           # E2E (Playwright) 46개: 데모 시나리오 7 + 품질 6 + 모든 화면 2 + 기능별 동작 31
 ```
 
 - E2E는 **실행 중인 개발 서버**(백엔드 + `npm run dev`, medium 시드)에 붙어서 돌고, PC에 설치된 Chrome을 씁니다.
-  만든 게시물·스토리·팔로우·가중치·가상 시계는 끝나면 되돌립니다 (DM 대화·알림 기록은 남음).
+  만든 게시물·스토리·팔로우·예약·가중치·플래그·가상 시계는 끝나면 되돌립니다 (DM·알림·주문 기록과 시험 가입 계정 e2e_*는 남음).
+  - 시험 대상(조건에 맞는 가짜 계정·게시물)은 DB 컨테이너에서 읽기 전용 SQL로 고릅니다 (`docker exec yangstagram-postgres psql`).
 
 ## 알아 둘 것
 

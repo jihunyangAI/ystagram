@@ -381,6 +381,8 @@ export interface ReplyTarget {
   username: string
 }
 
+const REPLY_ADDED = 'yangstagram:reply-added'
+
 /**
  * 댓글 한 개. compact는 피드 카드 미리보기(한 줄).
  * 상세에서는 좋아요 · 답글 달기 · 수정(15분) · 고정(게시물 주인) · 삭제 · "답글 보기(N개)"
@@ -406,6 +408,15 @@ export function CommentItem({
   const [reporting, setReporting] = useState(false)
   const replies = useReplies(comment.id, showReplies)
   const [, rerender] = useState(0)
+
+  // 이 댓글에 답글을 달면 답글을 펼쳐서 방금 쓴 답글이 바로 보이게
+  useEffect(() => {
+    const onReply = (e: Event) => {
+      if ((e as CustomEvent<number>).detail === comment.id) setShowReplies(true)
+    }
+    window.addEventListener(REPLY_ADDED, onReply)
+    return () => window.removeEventListener(REPLY_ADDED, onReply)
+  }, [comment.id])
 
   // 15분 제한이 지나면 "수정" 버튼을 숨기기 위해 1분마다 다시 그린다
   useEffect(() => {
@@ -470,6 +481,16 @@ export function CommentItem({
                 value={draft}
                 maxLength={2200}
                 onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  // 댓글 입력처럼 Enter로 저장, Shift+Enter는 줄바꿈, Esc는 취소
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    e.currentTarget.form?.requestSubmit()
+                  } else if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    setEditing(false)
+                  }
+                }}
                 rows={2}
                 aria-label="댓글 수정"
                 className="w-full resize-none rounded-md border border-border bg-surface px-2 py-1 outline-none"
@@ -619,11 +640,13 @@ export function CommentInput({
     if (!body.trim() || add.isPending || sending) return
     if (replyTo) {
       setSending(true)
+      const parentId = replyTo.id
       actions
-        .reply(replyTo.id, body)
+        .reply(parentId, body)
         .then(() => {
           setBody('')
           onCancelReply?.()
+          window.dispatchEvent(new CustomEvent(REPLY_ADDED, { detail: parentId }))
         }, (err: Error) => toast(err.message))
         .finally(() => setSending(false))
       return
