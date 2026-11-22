@@ -40,6 +40,7 @@ import { PickListPage, RelationListPage } from './pages/settings/RelationPages'
 import { CreateStoryPage } from './pages/story/CreateStoryPage'
 import { StoryArchivePage } from './pages/story/StoryArchivePage'
 import { PostArchivePage, RecentlyDeletedPage } from './pages/post/PostArchivePages'
+import { AudioPage } from './pages/reels/AudioPage'
 import { StoryViewerPage } from './pages/story/StoryViewerPage'
 
 export default function App() {
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="stories/highlights/:id" element={<StoryViewerPage />} />
           <Route path="archive/stories" element={<StoryArchivePage />} />
           <Route path="archive/posts" element={<PostArchivePage />} />
+          <Route path="audio/:id" element={<AudioPage />} />
           <Route path="accounts/recently-deleted" element={<RecentlyDeletedPage />} />
           <Route path="create" element={<CreatePostPage />} />
           <Route path="create/story" element={<CreateStoryPage />} />

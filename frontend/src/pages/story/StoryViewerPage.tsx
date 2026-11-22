@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Eye, Heart, MoreHorizontal, Send, X } from '
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
 import { StickerLayer } from '../../components/story/StickerView'
+import { AudioChip, PlayButton } from '../../components/music/MusicPicker'
 import { ConfirmModal, Modal, SheetButton } from '../../components/Modal'
 import { toast } from '../../components/Toast'
 import { timeAgo } from '../../lib/format'
@@ -229,6 +230,12 @@ export function StoryViewerPage() {
                 <span className="rounded-full bg-[#1fc25b] px-2 py-0.5 text-[11px] font-semibold text-white">친한 친구</span>
               )}
               <span className="flex-1" />
+              {story.audio && (
+                <span className="flex min-w-0 items-center gap-1 text-xs text-white/90">
+                  <PlayButton track={story.audio} className="size-6 bg-white/20" size={11} />
+                  <AudioChip audio={story.audio} className="max-w-[140px]" />
+                </span>
+              )}
               {story.mine && (
                 <button aria-label="옵션" className="p-1" onClick={() => setModal('menu')}>
                   <MoreHorizontal size={22} />

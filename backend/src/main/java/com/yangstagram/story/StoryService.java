@@ -52,10 +52,12 @@ public class StoryService {
     private final Realtime realtime;
     private final LabClock clock;
     private final JsonMapper json;
+    private final com.yangstagram.audio.AudioService audio;
 
     public StoryService(NamedParameterJdbcTemplate jdbc, UserService userService, FollowService followService,
                         MediaStorage storage, NotificationService notifications, DmService dm, Realtime realtime,
-                        LabClock clock, JsonMapper json) {
+                        LabClock clock, JsonMapper json, com.yangstagram.audio.AudioService audio) {
+        this.audio = audio;
         this.json = json;
         this.jdbc = jdbc;
         this.userService = userService;
@@ -79,16 +81,16 @@ public class StoryService {
     public record StoryView(long id, UserSummary author, String mediaUrl, int width, int height, String altText,
                             Instant createdAt, Instant expiresAt, boolean seen, boolean liked, boolean mine,
                             Integer viewerCount, boolean expired, String audience, List<Sticker> stickers,
-                            List<Result> results) {
+                            List<Result> results, com.yangstagram.audio.AudioService.AudioRef audio) {
 
         StoryView withResults(List<Result> r) {
             return new StoryView(id, author, mediaUrl, width, height, altText, createdAt, expiresAt, seen, liked, mine,
-                    viewerCount, expired, audience, stickers, r);
+                    viewerCount, expired, audience, stickers, r, audio);
         }
     }
 
     /** 만들기 요청 (사진 파일은 multipart의 file 파트) */
-    public record CreateStoryRequest(String altText, String audience, List<Sticker> stickers) {
+    public record CreateStoryRequest(String altText, String audience, List<Sticker> stickers, Long audioId) {
     }
 
     public record RespondRequest(String value) {
@@ -195,7 +197,7 @@ public class StoryService {
     /** 사진 한 장 (화면에서 9:16으로 자르고 글자를 그려 넣은 상태) */
     @Transactional
     public StoryView create(long me, MultipartFile file, CreateStoryRequest req) {
-        CreateStoryRequest data = req == null ? new CreateStoryRequest(null, null, null) : req;
+        CreateStoryRequest data = req == null ? new CreateStoryRequest(null, null, null, null) : req;
         String audience = "CLOSE_FRIENDS".equalsIgnoreCase(data.audience()) ? "CLOSE_FRIENDS" : "PUBLIC";
         List<Sticker> stickers = Stickers.validate(data.stickers());
         StoredImage img = storage.saveImage(file);
@@ -203,9 +205,10 @@ public class StoryService {
         String alt = data.altText() == null || data.altText().isBlank() ? null : data.altText().strip();
         if (alt != null && alt.length() > 200) alt = alt.substring(0, 200);
         Long id = jdbc.queryForObject("""
-                insert into stories (author_id, media_url, width, height, alt_text, created_at, expires_at, audience, stickers)
-                values (:me, :url, :w, :h, :alt, :now, :expires, :audience, cast(:stickers as jsonb)) returning id
-                """, new MapSqlParameterSource("me", me).addValue("url", img.url()).addValue("w", img.width())
+                insert into stories (author_id, media_url, width, height, alt_text, created_at, expires_at, audience, stickers,
+                                     audio_id)
+                values (:me, :url, :w, :h, :alt, :now, :expires, :audience, cast(:stickers as jsonb), :audio) returning id
+                """, new MapSqlParameterSource("me", me).addValue("audio", audio.require(data.audioId())).addValue("url", img.url()).addValue("w", img.width())
                 .addValue("h", img.height()).addValue("alt", alt).addValue("now", Timestamp.from(now))
                 .addValue("expires", Timestamp.from(now.plus(LIFETIME))).addValue("audience", audience)
                 .addValue("stickers", stickers.isEmpty() ? null : json.writeValueAsString(stickers)), Long.class);
@@ -479,10 +482,13 @@ public class StoryService {
                 select s.id, s.media_url, s.width, s.height, s.alt_text, s.created_at, s.expires_at, s.audience,
                        s.stickers::text as stickers_json, %s,
                        v.story_id is not null as seen, coalesce(v.liked, false) as liked,
-                       (select count(*) from story_views x where x.story_id = s.id) as viewer_count
+                       (select count(*) from story_views x where x.story_id = s.id) as viewer_count,
+                       t.id as t_id, t.title as t_title, t.artist as t_artist, t.bpm as t_bpm, t.seed as t_seed,
+                       t.duration_ms as t_duration_ms, t.origin_post_id as t_origin_post_id
                 from stories s
                 join users a on a.id = s.author_id
                 left join story_views v on v.story_id = s.id and v.viewer_id = :me
+                left join audio_tracks t on t.id = s.audio_id
                 """.formatted(UserRows.cols("a"));
     }
 
@@ -496,7 +502,8 @@ public class StoryService {
         return new StoryView(rs.getLong("id"), author, rs.getString("media_url"), rs.getInt("width"),
                 rs.getInt("height"), rs.getString("alt_text"), rs.getTimestamp("created_at").toInstant(), expires,
                 rs.getBoolean("seen"), rs.getBoolean("liked"), mine, mine ? rs.getInt("viewer_count") : null,
-                !expires.isAfter(Instant.now(clock)), rs.getString("audience"), stickers, List.of());
+                !expires.isAfter(Instant.now(clock)), rs.getString("audience"), stickers, List.of(),
+                com.yangstagram.audio.AudioService.read(rs, "t_"));
     }
 
     /** 지금 볼 수 있는 스토리 (만료·삭제·비공개면 404) */

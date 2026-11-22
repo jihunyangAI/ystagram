@@ -325,4 +325,107 @@ class M6IntegrationTest {
                 .andExpect(jsonPath("$.complete").value(true))
                 .andExpect(jsonPath("$.to").value("en"));
     }
+
+    // ------------------------------------------------------------ ③ 음악·검색
+
+    private static MockMultipartFile json(String name, String value) throws Exception {
+        return new MockMultipartFile(name, "", MediaType.APPLICATION_JSON_VALUE, value.getBytes("UTF-8"));
+    }
+
+    private static byte[] png(int w, int h) throws Exception {
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", out);
+        return out.toByteArray();
+    }
+
+    private String adult() {
+        return jdbc.queryForObject("""
+                select username from users where not is_private and birth_date < current_date - interval '18 years'
+                order by id limit 1""", String.class);
+    }
+
+    private String reel(MockHttpSession s, String data) throws Exception {
+        MockMultipartFile video = new MockMultipartFile("video", "v.mp4", "video/mp4", new byte[] {0, 0, 0, 24, 102, 116});
+        MockMultipartFile poster = new MockMultipartFile("poster", "p.png", "image/png", png(360, 640));
+        return mvc.perform(multipart("/api/reels").file(video).file(poster).file(json("data", data)).session(s).with(csrf()))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+    }
+
+    @Test
+    void 시드에는_음원_목록과_원본_오디오가_있고_리믹스는_원본의_소리를_쓴다() {
+        assertThat(jdbc.queryForObject("select count(*) from audio_tracks where origin_post_id is null", Integer.class))
+                .isGreaterThanOrEqualTo(30);
+        assertThat(jdbc.queryForObject("select count(*) from posts where type = 'REEL' and audio_id is null",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                select count(*) from posts r join posts o on o.id = r.remix_of_id where r.audio_id is distinct from o.audio_id
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void 음악_없이_올린_릴스는_원본_오디오가_되고_다른_사람이_이_오디오를_쓸_수_있다() throws Exception {
+        String me = adult();
+        MockHttpSession s = loginAs(me);
+        String first = reel(s, "{\"caption\":\"내 소리\",\"durationMs\":8000}");
+        assertThat((Boolean) JsonPath.read(first, "$.extras.audio.original")).isTrue();
+        assertThat((String) JsonPath.read(first, "$.extras.audio.artist")).isEqualTo(me);
+        int audioId = JsonPath.read(first, "$.extras.audio.id");
+
+        String second = reel(s, "{\"durationMs\":5000,\"audioId\":" + audioId + "}");
+        assertThat((Integer) JsonPath.read(second, "$.extras.audio.id")).isEqualTo(audioId);
+        mvc.perform(get("/api/audio/" + audioId).session(s))
+                .andExpect(jsonPath("$.audio.title").value("원본 오디오"))
+                .andExpect(jsonPath("$.originShortcode").value((String) JsonPath.read(first, "$.shortcode")))
+                .andExpect(jsonPath("$.reelCount").value(2));
+        mvc.perform(get("/api/audio/" + audioId + "/reels").session(s))
+                .andExpect(jsonPath("$.items.length()").value(2));
+
+        mvc.perform(multipart("/api/reels").file(new MockMultipartFile("video", "v.mp4", "video/mp4", new byte[] {1, 2}))
+                        .file(new MockMultipartFile("poster", "p.png", "image/png", png(360, 640)))
+                        .file(json("data", "{\"durationMs\":5000,\"audioId\":999999}")).session(s).with(csrf()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_AUDIO"));
+    }
+
+    @Test
+    void 음원_검색_게시물과_스토리에_음악_붙이기() throws Exception {
+        MockHttpSession s = loginAs(adult());
+        String list = mvc.perform(get("/api/audio").param("q", "한강").session(s))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        int track = JsonPath.read(list, "$[0].id");
+        assertThat((String) JsonPath.read(list, "$[0].title")).isEqualTo("한강 산책");
+        mvc.perform(get("/api/search").param("q", "한강 산책").session(s))
+                .andExpect(jsonPath("$.audios[0].id").value(track));
+
+        MockMultipartFile photo = new MockMultipartFile("files", "a.png", "image/png", png(400, 500));
+        mvc.perform(multipart("/api/posts").file(photo).file(json("data", "{\"caption\":\"음악 있는 사진\",\"audioId\":" + track + "}"))
+                        .session(s).with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.extras.audio.title").value("한강 산책"))
+                .andExpect(jsonPath("$.extras.audio.original").value(false));
+        mvc.perform(multipart("/api/stories").file(new MockMultipartFile("file", "s.png", "image/png", png(540, 960)))
+                        .file(json("data", "{\"audioId\":" + track + "}")).session(s).with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.audio.artist").value("새벽세시"));
+    }
+
+    @Test
+    void 키워드_검색은_캡션에_검색어가_들어간_볼_수_있는_게시물만() throws Exception {
+        String me = adult();
+        MockHttpSession s = loginAs(me);
+        MockMultipartFile photo = new MockMultipartFile("files", "a.png", "image/png", png(400, 500));
+        String code = JsonPath.read(mvc.perform(multipart("/api/posts").file(photo)
+                        .file(json("data", "{\"caption\":\"오늘은 zxqvortex 실험 중\"}")).session(s).with(csrf()))
+                .andReturn().getResponse().getContentAsString(), "$.shortcode");
+        jdbc.update("update posts set caption = 'zxqvortex 비공개 글' where id = (select p.id from posts p join users u on u.id = p.author_id where u.is_private and u.username <> ? order by p.id limit 1)", me);
+        String other = jdbc.queryForObject("""
+                select username from users u where not is_private and username <> ?
+                  and not exists (select 1 from follows f join users pu on pu.id = f.following_id
+                                  where f.follower_id = u.id and pu.is_private)
+                order by id limit 1""", String.class, me);
+        List<String> hits = JsonPath.read(mvc.perform(get("/api/search/posts").param("q", "ZXQVORTEX").session(loginAs(other)))
+                .andReturn().getResponse().getContentAsString(), "$.items[*].shortcode");
+        assertThat(hits).containsExactly(code);
+        mvc.perform(get("/api/search/posts").param("q", "z").session(s)).andExpect(jsonPath("$.items").isEmpty());
+    }
 }

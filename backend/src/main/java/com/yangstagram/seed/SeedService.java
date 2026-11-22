@@ -93,6 +93,18 @@ public class SeedService {
     record FakeFollow(FakeUser follower, FakeUser following, String status, boolean favorite, Instant createdAt) {
     }
 
+    /** 이미 데이터가 있는 DB에 음원이 없으면 (M6 ③ 이전에 만든 DB) 음원·원본 오디오만 채운다 */
+    @Transactional
+    public void backfillMusic() {
+        Integer tracks = jdbc.queryForObject("select count(*) from audio_tracks", Integer.class);
+        Integer posts = jdbc.queryForObject("select count(*) from posts", Integer.class);
+        if (tracks == null || tracks > 0 || posts == null || posts == 0) return;
+        int n = new SeedMusic(jdbc, new Random(7), Instant.now(clock)).generate();
+        jdbc.execute("analyze audio_tracks");
+        jdbc.execute("analyze posts");
+        log.info("기존 DB에 음원·원본 오디오 채움: {}", n);
+    }
+
     @Transactional
     public SeedResult generate(SeedSize size, long seed) {
         long started = System.currentTimeMillis();
@@ -107,7 +119,7 @@ public class SeedService {
                                reports, backup_codes, user_locations, channels, channel_members,
                                channel_messages, channel_reactions, channel_poll_votes, blends,
                                lives, live_comments, live_viewers, calls, products, post_products,
-                               product_wishlist, orders, subscriptions, gifts
+                               product_wishlist, orders, subscriptions, gifts, audio_tracks, message_opens
                                restart identity cascade
                 """);
 
@@ -141,6 +153,9 @@ public class SeedService {
         log.info("M5-② 데이터: 제품={}, 제품 태그={}, 주문={}, 구독={}, 구독자 전용={}, 선물={}, 리믹스={}, 지난 라이브={}",
                 m52.products(), m52.productTags(), m52.orders(), m52.subscriptions(), m52.exclusivePosts(), m52.gifts(),
                 m52.remixes(), m52.pastLives());
+
+        int tracks = new SeedMusic(jdbc, rnd, now).generate();
+        log.info("M6 데이터: 음원·원본 오디오={}", tracks);
 
         jdbc.execute("analyze"); // 대량으로 넣은 뒤 통계를 새로 (쿼리 계획이 틀어지지 않게)
         long elapsed = System.currentTimeMillis() - started;

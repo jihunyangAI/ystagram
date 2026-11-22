@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Camera, ChevronLeft, Film, TriangleAlert } from 'lucide-react'
 import { toast } from '../../components/Toast'
@@ -8,7 +8,8 @@ import { VideoRecorder } from '../../components/post/VideoRecorder'
 import { api } from '../../lib/api'
 import { useMe } from '../../lib/auth'
 import { useSubscription } from '../../lib/shop'
-import type { PostView } from '../../lib/types'
+import type { AudioRef, PostView } from '../../lib/types'
+import { MusicField } from '../../components/music/MusicPicker'
 
 const MAX_MS = 20 * 60_000
 const RECOMMEND_MS = 3 * 60_000
@@ -45,6 +46,14 @@ export function CreateReelPage() {
   const [duration, setDuration] = useState(0)
   const [coverAt, setCoverAt] = useState(0)
   const [caption, setCaption] = useState('')
+  const [params] = useSearchParams()
+  const presetAudio = params.get('audio')
+  const [audio, setAudio] = useState<AudioRef | null>(null)
+  // 오디오 페이지의 "이 오디오 사용"으로 왔으면 그 곡을 미리 골라 둔다
+  useEffect(() => {
+    if (!presetAudio) return
+    api.get<{ audio: AudioRef }>(`/api/audio/${presetAudio}`).then((p) => setAudio(p.audio), () => undefined)
+  }, [presetAudio])
   const [hideLikes, setHideLikes] = useState(false)
   const [noComments, setNoComments] = useState(false)
   const [aiLabel, setAiLabel] = useState(false)
@@ -109,6 +118,7 @@ export function CreateReelPage() {
         remixOf: remixOf ?? null,
         allowRemix,
         subscribersOnly: subsOnly,
+        audioId: audio?.id ?? null,
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
       const reel = await api.upload<PostView>('POST', '/api/reels', form)
@@ -236,6 +246,7 @@ export function CreateReelPage() {
             )}
             {tooLong && <p className="rounded-lg bg-surface-2 p-3 text-xs text-danger">릴스는 20분까지 올릴 수 있습니다.</p>}
             <CaptionField value={caption} onChange={setCaption} />
+            {!remixOf && <MusicField value={audio} onChange={setAudio} />}
             <Toggle checked={hideLikes} onChange={setHideLikes} label="좋아요 수 숨기기" />
             <Toggle checked={noComments} onChange={setNoComments} label="댓글 기능 해제" />
             <Toggle

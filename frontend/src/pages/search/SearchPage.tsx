@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Hash, MapPin, Search, X } from 'lucide-react'
+import { Hash, MapPin, Music2, Search, X } from 'lucide-react'
+import clsx from 'clsx'
+import { InfiniteGrid } from '../../components/post/Grid'
+import { PlayButton } from '../../components/music/MusicPicker'
 import { Avatar } from '../../components/Avatar'
 import { UserBadges } from '../../components/UserBadges'
 import { formatCount } from '../../lib/format'
@@ -35,7 +38,9 @@ export function SearchPage() {
   }
 
   const r = search.data
-  const nothing = r && r.users.length + r.tags.length + r.places.length === 0
+  const [tab, setTab] = useState<SearchTab>('ALL')
+  const nothing = r && r.users.length + r.tags.length + r.places.length + r.audios.length === 0
+  const show = (t: SearchTab) => tab === 'ALL' || tab === t
 
   return (
     <div className="mx-auto max-w-[600px] pb-8">
@@ -86,26 +91,83 @@ export function SearchPage() {
               </li>
             ))}
           </ul>
-          <p className="mt-10 px-6 text-center text-xs text-muted">탐색 그리드(추천 게시물·릴스)는 M3 단계에서 추가됩니다.</p>
         </section>
       ) : (
         <section aria-live="polite">
-          {search.isLoading && <p className="p-6 text-center text-sm text-muted">검색 중…</p>}
-          {nothing && <p className="p-10 text-center text-sm text-muted">결과를 찾을 수 없습니다.</p>}
-          {r?.users.map((u) => (
-            <UserResult key={u.user.id} hit={u} onClick={() => go('USER', u.user.username, `/${u.user.username}`)} />
-          ))}
-          {r?.tags.map((t) => (
-            <TagResult key={t.name} tag={t} onClick={() => go('TAG', t.name, `/explore/tags/${t.name}`)} />
-          ))}
-          {r?.places.map((p) => (
-            <PlaceResult key={p.id} place={p} onClick={() => go('PLACE', String(p.id), `/explore/locations/${p.id}`)} />
-          ))}
+          <div role="tablist" aria-label="검색 결과 종류" className="flex gap-1.5 overflow-x-auto px-4 pb-2">
+            {SEARCH_TABS.map(([key, label]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+                className={clsx(
+                  'shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold',
+                  tab === key ? 'bg-text text-bg' : 'bg-surface-2',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tab === 'POSTS' ? (
+            <InfiniteGrid
+              queryKey={['keyword', term.trim()]}
+              url={`/api/search/posts?q=${encodeURIComponent(term.trim())}`}
+              empty={<p className="p-10 text-center text-sm text-muted">"{term.trim()}"이(가) 들어간 게시물이 없습니다.</p>}
+            />
+          ) : (
+            <>
+              {search.isLoading && <p className="p-6 text-center text-sm text-muted">검색 중…</p>}
+              {nothing && tab === 'ALL' && <p className="p-10 text-center text-sm text-muted">결과를 찾을 수 없습니다.</p>}
+              {show('USERS') &&
+                r?.users.map((u) => (
+                  <UserResult key={u.user.id} hit={u} onClick={() => go('USER', u.user.username, `/${u.user.username}`)} />
+                ))}
+              {show('AUDIO') &&
+                r?.audios.map((a) => (
+                  <div key={a.id} className={rowClass}>
+                    <span className="grid size-11 shrink-0 place-items-center rounded-md bg-gradient-to-br from-primary/80 to-primary/30 text-white">
+                      <Music2 size={20} />
+                    </span>
+                    <button className="min-w-0 flex-1 text-left" onClick={() => navigate(`/audio/${a.id}`)}>
+                      <b className="block truncate text-sm">{a.title}</b>
+                      <span className="block truncate text-xs text-muted">{a.original ? `${a.artist} · 원본 오디오` : a.artist}</span>
+                    </button>
+                    <PlayButton track={a} className="size-8 bg-surface-2" />
+                  </div>
+                ))}
+              {show('TAGS') &&
+                r?.tags.map((t) => <TagResult key={t.name} tag={t} onClick={() => go('TAG', t.name, `/explore/tags/${t.name}`)} />)}
+              {show('PLACES') &&
+                r?.places.map((p) => (
+                  <PlaceResult key={p.id} place={p} onClick={() => go('PLACE', String(p.id), `/explore/locations/${p.id}`)} />
+                ))}
+              {tab === 'ALL' && term.trim().length >= 2 && (
+                <button className={clsx(rowClass, 'text-sm')} onClick={() => setTab('POSTS')}>
+                  <span className="grid size-11 shrink-0 place-items-center rounded-full border border-border">
+                    <Search size={18} />
+                  </span>
+                  <span>"{term.trim()}" 키워드로 게시물 보기</span>
+                </button>
+              )}
+            </>
+          )}
         </section>
       )}
     </div>
   )
 }
+
+type SearchTab = 'ALL' | 'USERS' | 'AUDIO' | 'TAGS' | 'PLACES' | 'POSTS'
+const SEARCH_TABS: [SearchTab, string][] = [
+  ['ALL', '전체'],
+  ['USERS', '계정'],
+  ['AUDIO', '오디오'],
+  ['TAGS', '태그'],
+  ['PLACES', '장소'],
+  ['POSTS', '게시물'],
+]
 
 const rowClass = 'flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-surface-2'
 

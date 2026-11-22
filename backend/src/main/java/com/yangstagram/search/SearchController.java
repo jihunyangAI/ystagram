@@ -47,9 +47,11 @@ public class SearchController {
     private final FollowService followService;
     private final PostQueries queries;
     private final LabClock clock;
+    private final com.yangstagram.audio.AudioService audio;
 
     public SearchController(NamedParameterJdbcTemplate jdbc, FollowService followService, PostQueries queries,
-                            LabClock clock) {
+                            LabClock clock, com.yangstagram.audio.AudioService audio) {
+        this.audio = audio;
         this.jdbc = jdbc;
         this.followService = followService;
         this.queries = queries;
@@ -66,7 +68,8 @@ public class SearchController {
     public record PlaceHit(long id, String name, String city, int postCount) {
     }
 
-    public record SearchResult(List<UserHit> users, List<TagHit> tags, List<PlaceHit> places) {
+    public record SearchResult(List<UserHit> users, List<TagHit> tags, List<PlaceHit> places,
+                               List<com.yangstagram.audio.AudioService.AudioRef> audios) {
     }
 
     /** 최근 검색 한 줄 (kind에 맞는 것 하나만 채워짐) */
@@ -89,13 +92,24 @@ public class SearchController {
         long me = CurrentUser.requireId();
         String term = q.strip().toLowerCase();
         if (term.startsWith("#")) {
-            return new SearchResult(List.of(), tags(term.substring(1), 20), List.of());
+            return new SearchResult(List.of(), tags(term.substring(1), 20), List.of(), List.of());
         }
         if (term.startsWith("@")) term = term.substring(1);
         if (term.isEmpty()) {
-            return new SearchResult(List.of(), List.of(), List.of());
+            return new SearchResult(List.of(), List.of(), List.of(), List.of());
         }
-        return new SearchResult(users(me, term, 20), tags(term, 8), places(term, 5));
+        return new SearchResult(users(me, term, 20), tags(term, 8), places(term, 5), audio.search(term, 5));
+    }
+
+    /** 키워드 검색: 캡션에 검색어가 들어간 게시물 */
+    @GetMapping("/search/posts")
+    public com.yangstagram.common.paging.Slice<com.yangstagram.post.dto.PostDtos.GridItem> keyword(
+            @RequestParam(defaultValue = "") String q, @RequestParam(required = false) String cursor) {
+        long me = CurrentUser.requireId();
+        String term = q.strip().toLowerCase();
+        if (term.startsWith("#")) term = term.substring(1);
+        if (term.length() < 2) return new com.yangstagram.common.paging.Slice<>(List.of(), null);
+        return queries.keywordGrid(term, me, com.yangstagram.common.paging.Cursor.decode(cursor), 24);
     }
 
     private List<UserHit> users(long me, String term, int limit) {

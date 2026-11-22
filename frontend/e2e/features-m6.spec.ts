@@ -125,3 +125,62 @@ test('DM: 번역 보기 → 메시지 고정 → 음성 메시지 → 1회 보�
   const inbox = await call<{ id: number; pinned: boolean }[]>(F.asA, 'GET', `/api/direct/inbox?folder=${folder}`)
   expect(inbox[0]).toMatchObject({ id: conv.id, pinned: true })
 })
+
+// ------------------------------------------------------------------ ③ 검색·음악·스토리
+
+test('검색·음악: 오디오 검색 → 오디오 페이지(미리 듣기) → 이 오디오 사용 → 키워드 검색 → 게시물에 붙은 음악', async ({ page }) => {
+  const word = `kw${Date.now().toString(36)}`
+  const [track] = await call<{ id: number; title: string }[]>(F.asA, 'GET', '/api/audio?q=한강')
+  const sc = await createPost(F.asA, `E2E ${word} 키워드 게시물`, { audioId: track.id })
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/posts/${sc}`).catch(() => undefined))
+
+  await open(page, F.A, '/explore/search')
+  await page.getByLabel('검색어').fill('한강 산책')
+  await page.getByRole('tab', { name: '오디오' }).click()
+  await page.getByText('한강 산책', { exact: true }).first().click()
+  await expect(page).toHaveURL(new RegExp(`/audio/${track.id}$`))
+  await expect(page.getByRole('heading', { name: '한강 산책' })).toBeVisible()
+  await page.getByRole('button', { name: '한강 산책 미리 듣기' }).click()
+  await expect(page.getByRole('button', { name: '한강 산책 멈춤' })).toBeVisible()
+  await page.getByRole('link', { name: /이 오디오 사용/ }).click()
+  await page.waitForURL((u) => u.pathname === '/create/reel' && u.searchParams.get('audio') === String(track.id))
+
+  await page.goto('/explore/search')
+  await page.getByLabel('검색어').fill(word)
+  await page.getByRole('button', { name: new RegExp(`${word}.*키워드로 게시물 보기`) }).click()
+  await page.locator(`a[href="/p/${sc}"]`).first().click()
+  await expect(page.getByRole('link', { name: /오디오: 새벽세시 · 한강 산책/ }).filter({ visible: true }).first()).toBeVisible()
+})
+
+test('스토리: 그리기 → 음악 추가 → 공유 → 보는 사람 화면에 음악 표시', async ({ page }) => {
+  await open(page, F.A, '/create/story')
+  await page.locator('input[type="file"]').setInputFiles(solidPng('draw.png', [40, 40, 40], 540, 960))
+  await page.getByRole('button', { name: '그리기', exact: true }).click()
+  const canvas = page.getByLabel('스토리에 그리기')
+  const box = (await canvas.boundingBox())!
+  await page.mouse.move(box.x + 40, box.y + 60)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 160, box.y + 200, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByRole('button', { name: /되돌리기/ })).toBeEnabled()
+  // 그린 자리가 펜 색(노랑)으로 칠해졌는지
+  const yellow = await canvas.evaluate((c: HTMLCanvasElement, at) => {
+    const r = c.getBoundingClientRect()
+    const d = c.getContext('2d')!.getImageData(((at.x) / r.width) * c.width, ((at.y) / r.height) * c.height, 1, 1).data
+    return d[0] > 200 && d[1] > 180 && d[2] < 80
+  }, { x: 100, y: 130 })
+  expect(yellow, '그린 선이 사진에 들어감').toBe(true)
+  await page.getByRole('button', { name: '완료' }).click()
+
+  await page.getByRole('button', { name: '음악 추가' }).click()
+  const picker = page.getByRole('dialog', { name: '음악' })
+  await picker.getByLabel('음악 검색').fill('Neon')
+  await picker.getByRole('button', { name: /Neon Seoul/ }).first().click()
+  await expect(page.getByText('KITE · Neon Seoul')).toBeVisible()
+  await page.getByRole('button', { name: '공유', exact: true }).click()
+  await expect(page.getByText(/스토리를 공유했습니다/)).toBeVisible()
+  const mine = await call<{ id: number; audio: { title: string } | null }[]>(F.asA, 'GET', `/api/stories/users/${F.A}`)
+  const story = mine[mine.length - 1]
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/stories/${story.id}`).catch(() => undefined))
+  expect(story.audio?.title).toBe('Neon Seoul')
+})

@@ -10,6 +10,7 @@ interface Targets {
   tag: string
   location: string
   highlight: string
+  audio: string
   conversation: string
   channel: string
   blend: string
@@ -47,6 +48,7 @@ test.beforeAll(async () => {
     tag: one(`select name from hashtags order by id limit 1`),
     location: one(`select location_id from posts where location_id is not null limit 1`),
     highlight: one(`select h.id from highlights h join users a on a.id = h.user_id where not a.is_private limit 1`),
+    audio: one(`select audio_id from posts where audio_id is not null and type = 'REEL' group by audio_id order by count(*) desc limit 1`),
     live: one(`select id from lives where status = 'LIVE' limit 1`),
     product: one(`select id from products where deleted_at is null limit 1`),
   }
@@ -84,6 +86,7 @@ const routes = (t: Targets) => [
   `/stories/highlights/${t.highlight}`,
   '/archive/stories',
   '/archive/posts',
+  `/audio/${t.audio}`,
   '/accounts/recently-deleted',
   '/create',
   '/create/story',

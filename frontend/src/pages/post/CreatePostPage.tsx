@@ -9,7 +9,8 @@ import { toast } from '../../components/Toast'
 import { api } from '../../lib/api'
 import { useMe } from '../../lib/auth'
 import { useSubscription } from '../../lib/shop'
-import type { LocationItem, PostView, ScheduledPost, UserSummary } from '../../lib/types'
+import type { AudioRef, LocationItem, PostView, ScheduledPost, UserSummary } from '../../lib/types'
+import { MusicField } from '../../components/music/MusicPicker'
 import { fromLocalInput, laterInput, scheduleLabel } from '../../lib/datetime'
 import { EditStep } from './EditStep'
 import { NO_ADJUST, cssFilter, drawVignette, vignetteStyle } from './filters'
@@ -102,6 +103,7 @@ export function CreatePostPage() {
   const [ratio, setRatio] = useState(RATIOS[1].value)
   const [caption, setCaption] = useState('')
   const [location, setLocation] = useState('')
+  const [audio, setAudio] = useState<AudioRef | null>(null)
   const [hideLikeCount, setHide] = useState(false)
   const [commentsDisabled, setNoComments] = useState(false)
   const [aiLabel, setAiLabel] = useState(false)
@@ -180,6 +182,7 @@ export function CreatePostPage() {
         filter: items[0]?.filter === 'normal' ? null : items[0]?.filter,
         aiLabel,
         subscribersOnly: subsOnly,
+        audioId: audio?.id ?? null,
         scheduledAt: scheduleOn ? new Date(fromLocalInput(scheduleAt)).toISOString() : null,
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
@@ -310,6 +313,7 @@ export function CreatePostPage() {
               </div>
               <CaptionField value={caption} onChange={setCaption} autoFocus />
               <LocationField value={location} onChange={setLocation} />
+              <MusicField value={audio} onChange={setAudio} />
               <section className="border-t border-border pt-4">
                 <h2 className="mb-2 text-sm font-semibold">사람 태그 ({tags.length}/20)</h2>
                 {pendingTag ? (

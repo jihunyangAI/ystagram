@@ -18,6 +18,7 @@ import { ShareModal } from '../dm/ShareModal'
 import { StoryRingAvatar } from '../story/StoryRingAvatar'
 import { UserListModal } from '../user/UserListModal'
 import { WhyModal } from '../ranking/WhyModal'
+import { AudioChip } from '../music/MusicPicker'
 import { ReportModal } from '../report/ReportModal'
 import { RichText } from './RichText'
 import { SaveButton } from './SaveButton'
@@ -90,7 +91,7 @@ export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => voi
               </>
             )}
           </div>
-          {(post.ad || post.location || post.aiLabeled) && (
+          {(post.ad || post.location || post.aiLabeled || post.extras.audio) && (
             <div className="flex min-w-0 items-center gap-1 text-xs">
               {post.ad && <span>광고</span>}
               {!post.ad && post.location && (
@@ -98,9 +99,15 @@ export function PostHeader({ post, onMenu }: { post: PostView; onMenu: () => voi
                   {post.location.name}
                 </Link>
               )}
+              {!post.ad && post.extras.audio && (
+                <>
+                  {post.location && <span className="text-muted">·</span>}
+                  <AudioChip audio={post.extras.audio} className="text-muted hover:text-text" />
+                </>
+              )}
               {post.aiLabeled && (
                 <>
-                  {(post.ad || post.location) && <span className="text-muted">·</span>}
+                  {(post.ad || post.location || post.extras.audio) && <span className="text-muted">·</span>}
                   <button className="shrink-0 text-muted hover:text-text" onClick={() => setAiInfo(true)}>
                     AI 정보
                   </button>

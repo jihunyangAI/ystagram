@@ -195,6 +195,8 @@ export interface PostExtras {
   archived: boolean
   /** 프로필에 고정됨 (작성자에게만) */
   pinned: boolean
+  /** 음악 */
+  audio: AudioRef | null
 }
 
 export interface ProductView {
@@ -422,6 +424,19 @@ export interface SearchResult {
   users: UserHit[]
   tags: TagHit[]
   places: PlaceHit[]
+  audios: AudioRef[]
+}
+
+/** 가짜 음원 (소리는 화면이 seed·bpm으로 합성) */
+export interface AudioRef {
+  id: number
+  title: string
+  artist: string
+  /** 릴스의 원본 오디오 (artist = 올린 사람) */
+  original: boolean
+  bpm: number
+  seed: number
+  durationMs: number
 }
 
 export type RecentKind = 'USER' | 'TAG' | 'PLACE'
@@ -621,6 +636,7 @@ export interface StoryView {
   audience: 'PUBLIC' | 'CLOSE_FRIENDS'
   stickers: Sticker[]
   results: StickerResult[]
+  audio: AudioRef | null
 }
 
 export type StickerType = 'POLL' | 'QUIZ' | 'SLIDER' | 'QUESTION' | 'MENTION' | 'HASHTAG' | 'LOCATION' | 'LINK' | 'COUNTDOWN'

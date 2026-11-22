@@ -49,10 +49,12 @@ public class PostService {
     private final Mentions mentions;
     private final EventService events;
     private final FeatureFlags flags;
+    private final com.yangstagram.audio.AudioService audio;
 
     public PostService(NamedParameterJdbcTemplate jdbc, PostQueries queries, FollowService followService,
                        MediaStorage storage, LabClock clock, NotificationService notifications, Mentions mentions,
-                       EventService events, FeatureFlags flags) {
+                       EventService events, FeatureFlags flags, com.yangstagram.audio.AudioService audio) {
+        this.audio = audio;
         this.jdbc = jdbc;
         this.queries = queries;
         this.followService = followService;
@@ -143,11 +145,13 @@ public class PostService {
         String shortcode = Shortcodes.random();
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, location_id, hide_like_count,
-                                   comments_disabled, created_at, updated_at, filter, ai_labeled, subscribers_only)
+                                   comments_disabled, created_at, updated_at, filter, ai_labeled, subscribers_only,
+                                   audio_id)
                 values (:code, :author, :type, :caption, :location, :hide, :noComments, :now, :now, :filter, :ai,
-                        :subs)
+                        :subs, :audio)
                 returning id
                 """, new MapSqlParameterSource("code", shortcode).addValue("author", authorId)
+                .addValue("audio", audio.require(req.audioId()))
                 .addValue("type", images.size() > 1 ? "CAROUSEL" : "PHOTO").addValue("caption", caption)
                 .addValue("location", location == null ? null : locationId(location, now))
                 .addValue("hide", req.hideLikes()).addValue("noComments", req.noComments())
@@ -289,10 +293,11 @@ public class PostService {
         Long postId = jdbc.queryForObject("""
                 insert into posts (shortcode, author_id, type, caption, hide_like_count, comments_disabled,
                                    recommendable, created_at, updated_at, ai_labeled, trial, remix_of_id, allow_remix,
-                                   subscribers_only)
+                                   subscribers_only, audio_id)
                 values (:code, :author, 'REEL', :caption, :hide, :noComments, :rec, :now, :now, :ai, :trial, :remix,
-                        :allowRemix, :subs) returning id
+                        :allowRemix, :subs, :audio) returning id
                 """, new MapSqlParameterSource("code", Shortcodes.random()).addValue("author", authorId)
+                .addValue("audio", audio.require(req.audioId()))
                 .addValue("remix", original == null ? null : original.id())
                 .addValue("allowRemix", !Boolean.FALSE.equals(req.allowRemix()))
                 .addValue("subs", subscribersOnly(authorId, req.subscribersOnly()))
@@ -309,6 +314,15 @@ public class PostService {
                 .addValue("d", duration));
         attachHashtags(postId, Hashtags.extract(caption));
         jdbc.update("update users set posts_count = posts_count + 1 where id = :id", Map.of("id", authorId));
+        if (req.audioId() == null) {
+            // 음악을 고르지 않으면 이 릴스의 소리가 "원본 오디오"가 된다 (리믹스는 원본의 소리를 그대로)
+            Long originalAudio = original == null ? null : jdbc.queryForObject(
+                    "select audio_id from posts where id = :id", Map.of("id", original.id()), Long.class);
+            long audioId = originalAudio != null ? originalAudio : audio.createOriginal(postId, authorId,
+                    jdbc.queryForObject("select username from users where id = :id", Map.of("id", authorId), String.class),
+                    duration);
+            jdbc.update("update posts set audio_id = :a where id = :id", Map.of("a", audioId, "id", postId));
+        }
         mentions.notifyAll(caption, authorId, postId, null, Set.of());
         if (original != null) {
             notifications.notify(original.author().id(), authorId, NotificationType.REMIX, postId, null, null, null);

@@ -257,6 +257,21 @@ public class PostQueries {
         return new Slice<>(all, rest.nextCursor());
     }
 
+    /** 이 오디오를 쓴 릴스 */
+    public Slice<GridItem> audioGrid(long audioId, long viewerId, Cursor cursor, int limit) {
+        return gridOf("posts p join users a on a.id = p.author_id where p.audio_id = :audio and p.type = 'REEL' and "
+                        + VISIBLE + " and" + NOT_TRIAL,
+                "p.created_at", new MapSqlParameterSource("audio", audioId), viewerId, cursor, limit);
+    }
+
+    /** 키워드 검색: 캡션에 검색어가 들어간 게시물 (볼 수 있는 것만, 최신순) */
+    public Slice<GridItem> keywordGrid(String term, long viewerId, Cursor cursor, int limit) {
+        String like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return gridOf("posts p join users a on a.id = p.author_id where lower(p.caption) like :kw escape '\\' and "
+                        + VISIBLE + " and" + NOT_TRIAL,
+                "p.created_at", new MapSqlParameterSource("kw", like), viewerId, cursor, limit);
+    }
+
     /** 내 보관함(보관한 게시물, 보관한 순) */
     public Slice<GridItem> archivedGrid(long viewerId, Cursor cursor, int limit) {
         return gridOfAny("posts p join users a on a.id = p.author_id where p.author_id = :me "
@@ -503,6 +518,13 @@ public class PostQueries {
         Map<Long, Boolean> allow = new HashMap<>();
         Map<Long, Boolean> exclusive = new HashMap<>();
         Map<Long, Long> authorOf = new HashMap<>();
+        Map<Long, com.yangstagram.audio.AudioService.AudioRef> audios = new HashMap<>();
+        jdbc.query("""
+                select p.id as pid, t.id, t.title, t.artist, t.bpm, t.seed, t.duration_ms, t.origin_post_id
+                from posts p join audio_tracks t on t.id = p.audio_id where p.id in (:ids)
+                """, p, rs -> {
+            audios.put(rs.getLong("pid"), com.yangstagram.audio.AudioService.read(rs, ""));
+        });
         Map<Long, boolean[]> states = new HashMap<>();
         jdbc.query("select id, archived_at is not null, pinned_at is not null from posts where id in (:ids)", p, rs -> {
             states.put(rs.getLong(1), new boolean[] {rs.getBoolean(2), rs.getBoolean(3)});
@@ -558,7 +580,8 @@ public class PostQueries {
             result.put(id, new Extras(remixOf.get(id), remixCounts.getOrDefault(id, 0), allow.getOrDefault(id, true),
                     products.getOrDefault(id, List.of()), exclusive.getOrDefault(id, false),
                     mine ? gifts.getOrDefault(id, 0L) : null,
-                    mine && states.getOrDefault(id, new boolean[2])[0], mine && states.getOrDefault(id, new boolean[2])[1]));
+                    mine && states.getOrDefault(id, new boolean[2])[0], mine && states.getOrDefault(id, new boolean[2])[1],
+                    audios.get(id)));
         }
         return result;
     }

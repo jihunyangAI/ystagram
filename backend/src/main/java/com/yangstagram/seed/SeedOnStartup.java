@@ -24,5 +24,6 @@ public class SeedOnStartup implements ApplicationRunner {
         if (properties.onStartupIfEmpty() && userRepository.count() == 0) {
             seedService.generate(properties.size(), properties.value());
         }
+        seedService.backfillMusic();
     }
 }

@@ -297,6 +297,14 @@ class M52IntegrationTest {
 
     @Test
     void 구독하면_구독자_전용_게시물이_열리고_댓글에_구독자_배지가_붙는다() throws Exception {
+        // 시드가 구독 가격을 정한 공개 계정을 못 만들 때도 있어서(무작위), 없으면 게시물 있는 공개 계정에 가격을 붙인다
+        if (jdbc.queryForObject("select count(*) from users where subscription_price is not null and not is_private",
+                Integer.class) == 0) {
+            jdbc.update("""
+                    update users set subscription_price = 2900 where id = (select u.id from users u
+                      where not u.is_private and exists (select 1 from posts p where p.author_id = u.id and p.type <> 'REEL')
+                      order by u.followers_count desc limit 1)""");
+        }
         Map<String, Object> creator = jdbc.queryForMap("""
                 select id, username from users where subscription_price is not null and not is_private order by id limit 1
                 """);

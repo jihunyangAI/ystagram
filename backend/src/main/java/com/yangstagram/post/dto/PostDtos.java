@@ -92,8 +92,9 @@ public final class PostDtos {
      * @param giftStars 받은 별 (작성자 본인에게만, 아니면 null)
      */
     public record Extras(RemixRef remixOf, int remixCount, boolean allowRemix, List<ProductTag> products,
-                         boolean subscribersOnly, Long giftStars, boolean archived, boolean pinned) {
-        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false);
+                         boolean subscribersOnly, Long giftStars, boolean archived, boolean pinned,
+                         com.yangstagram.audio.AudioService.AudioRef audio) {
+        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false, null);
     }
 
     /** @param available 원본이 지워졌거나 볼 수 없으면 false (영상 주소 없음) */
@@ -144,7 +145,7 @@ public final class PostDtos {
     public record CreatePostRequest(String caption, String location, List<String> altTexts,
                                     Boolean hideLikeCount, Boolean commentsDisabled, List<TagInput> tags,
                                     List<String> collaborators, String filter, Boolean aiLabel,
-                                    Instant scheduledAt, Boolean subscribersOnly) {
+                                    Instant scheduledAt, Boolean subscribersOnly, Long audioId) {
 
         public boolean ai() {
             return Boolean.TRUE.equals(aiLabel);
@@ -166,7 +167,7 @@ public final class PostDtos {
      */
     public record CreateReelRequest(String caption, Long durationMs, Boolean hideLikeCount, Boolean commentsDisabled,
                                     Boolean aiLabel, Boolean trial, String remixOf, Boolean allowRemix,
-                                    Boolean subscribersOnly) {
+                                    Boolean subscribersOnly, Long audioId) {
     }
 
     /** 게시 후 수정: 캡션·위치·고급 설정 */

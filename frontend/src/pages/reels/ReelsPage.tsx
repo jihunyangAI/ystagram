@@ -27,6 +27,7 @@ import { RichText } from '../../components/post/RichText'
 import { SaveButton } from '../../components/post/SaveButton'
 import { GiftModal } from '../../components/post/GiftModal'
 import { CommentsSheet } from '../../components/post/CommentsSheet'
+import { AudioChip } from '../../components/music/MusicPicker'
 import { GridTiles } from '../../components/post/Grid'
 import { FollowButton } from '../../components/user/FollowButton'
 import { api } from '../../lib/api'
@@ -327,9 +328,13 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
             {post.extras.remixOf && !post.extras.remixOf.available && (
               <p className="mt-2 text-xs text-white/70">원본 릴스를 볼 수 없어요</p>
             )}
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-white/80">
-              <Music2 size={12} /> {post.author.username} · 원본 오디오
-            </p>
+            {post.extras.audio ? (
+              <AudioChip audio={post.extras.audio} className="mt-2 text-xs text-white/90" />
+            ) : (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-white/80">
+                <Music2 size={12} /> {post.author.username} · 원본 오디오
+              </p>
+            )}
             {post.extras.remixCount > 0 && (
               <button className="mt-1 text-xs text-white/80 underline" onClick={() => setRemixes(true)}>
                 리믹스 {formatCount(post.extras.remixCount)}개 보기

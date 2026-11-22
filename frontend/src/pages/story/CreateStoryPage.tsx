@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ImagePlus, Star, Sticker as StickerIcon, Trash2, Type, X } from 'lucide-react'
+import { ChevronLeft, ImagePlus, Pencil, Star, Sticker as StickerIcon, Trash2, Type, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { toast } from '../../components/Toast'
 import { StickerView } from '../../components/story/StickerView'
 import { storyApi } from '../../lib/stories'
-import type { Sticker, StickerType } from '../../lib/types'
+import type { AudioRef, Sticker, StickerType } from '../../lib/types'
+import { MusicField } from '../../components/music/MusicPicker'
 
 /** 편집 중인 스티커 (서버가 id를 붙인다) */
 type Draft = Omit<Sticker, 'id'> & { key: number }
@@ -36,6 +37,27 @@ interface Picked {
 }
 
 const COLORS = ['#ffffff', '#111111', '#ffd400', '#ff3b6b', '#3d7bff']
+
+/** 그리기 한 획 (1080×1920 좌표) */
+interface Stroke {
+  color: string
+  width: number
+  pts: [number, number][]
+}
+const PEN_SIZES = [8, 16, 32]
+
+function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[]) {
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  for (const st of strokes) {
+    ctx.strokeStyle = st.color
+    ctx.lineWidth = st.width
+    ctx.beginPath()
+    st.pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)))
+    if (st.pts.length === 1) ctx.lineTo(st.pts[0][0] + 0.1, st.pts[0][1])
+    ctx.stroke()
+  }
+}
 const POSITIONS = [
   { label: '위', y: 0.2 },
   { label: '가운데', y: 0.5 },
@@ -52,6 +74,7 @@ function draw(
   color: string,
   boxed: boolean,
   posY: number,
+  strokes: Stroke[] = [],
 ) {
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, W, H)
@@ -64,6 +87,7 @@ function draw(
   const y = (H - dh) / 2 + Math.max(-maxY, Math.min(maxY, offset.y))
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(p.img, x, y, dw, dh)
+  drawStrokes(ctx, strokes)
 
   const lines = text.trim() ? wrap(ctx, text.trim(), W - 160) : []
   if (lines.length === 0) return
@@ -131,6 +155,10 @@ export function CreateStoryPage() {
   const [sharing, setSharing] = useState(false)
   const [audience, setAudience] = useState<'PUBLIC' | 'CLOSE_FRIENDS'>('PUBLIC')
   const [drafts, setDrafts] = useState<Draft[]>([])
+  const [audio, setAudio] = useState<AudioRef | null>(null)
+  const [strokes, setStrokes] = useState<Stroke[]>([])
+  const [drawing, setDrawing] = useState(false)
+  const [pen, setPen] = useState({ color: COLORS[2], width: PEN_SIZES[1] })
   const [adding, setAdding] = useState(false)
   const stickerDrag = useRef<{ key: number; rect: DOMRect } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -162,17 +190,37 @@ export function CreateStoryPage() {
 
   const redraw = useCallback(() => {
     const ctx = canvas.current?.getContext('2d')
-    if (ctx && picked) draw(ctx, picked, offset, zoom, text, color, boxed, posY)
-  }, [picked, offset, zoom, text, color, boxed, posY])
+    if (ctx && picked) draw(ctx, picked, offset, zoom, text, color, boxed, posY, strokes)
+  }, [picked, offset, zoom, text, color, boxed, posY, strokes])
   useEffect(redraw, [redraw])
 
   // 끌어서 위치 옮기기 (화면 크기 → 1080×1920 좌표로 환산)
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
+  const penDown = useRef(false)
+  const toCanvas = (e: React.PointerEvent<HTMLCanvasElement>): [number, number] => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return [((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H]
+  }
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    if (drawing) {
+      penDown.current = true
+      const pt = toCanvas(e)
+      setStrokes((s) => [...s, { ...pen, pts: [pt] }])
+      return
+    }
     drag.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y }
   }
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (drawing) {
+      if (!penDown.current) return
+      const pt = toCanvas(e)
+      setStrokes((s) => {
+        const last = s[s.length - 1]
+        return [...s.slice(0, -1), { ...last, pts: [...last.pts, pt] }]
+      })
+      return
+    }
     if (!drag.current) return
     const k = W / e.currentTarget.getBoundingClientRect().width
     setOffset({ x: drag.current.ox + (e.clientX - drag.current.x) * k, y: drag.current.oy + (e.clientY - drag.current.y) * k })
@@ -185,12 +233,12 @@ export function CreateStoryPage() {
       const out = document.createElement('canvas')
       out.width = W
       out.height = H
-      draw(out.getContext('2d')!, picked, offset, zoom, text, color, boxed, posY)
+      draw(out.getContext('2d')!, picked, offset, zoom, text, color, boxed, posY, strokes)
       const blob = await new Promise<Blob>((resolve, reject) =>
         out.toBlob((b) => (b ? resolve(b) : reject(new Error('사진을 만들지 못했습니다'))), 'image/jpeg', 0.9),
       )
       const stickers = drafts.map(({ key: _key, ...rest }) => rest)
-      await storyApi.create(blob, { altText: text.trim() || undefined, audience, stickers })
+      await storyApi.create(blob, { altText: text.trim() || undefined, audience, stickers, audioId: audio?.id ?? null })
       qc.invalidateQueries({ queryKey: ['story-tray'] })
       qc.invalidateQueries({ queryKey: ['story-archive'] })
       qc.invalidateQueries({ queryKey: ['profile'] })
@@ -242,11 +290,17 @@ export function CreateStoryPage() {
               ref={canvas}
               width={W}
               height={H}
-              aria-label="스토리 미리보기 (끌어서 위치 조정)"
-              className="aspect-[9/16] w-full cursor-grab touch-none rounded-xl bg-black active:cursor-grabbing"
+              aria-label={drawing ? '스토리에 그리기' : '스토리 미리보기 (끌어서 위치 조정)'}
+              className={clsx(
+                'aspect-[9/16] w-full touch-none rounded-xl bg-black',
+                drawing ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing',
+              )}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
-              onPointerUp={() => (drag.current = null)}
+              onPointerUp={() => {
+                drag.current = null
+                penDown.current = false
+              }}
             />
             {drafts.map((d) => (
               <div
@@ -287,9 +341,60 @@ export function CreateStoryPage() {
             >
               <Type size={18} />
             </button>
+            <button
+              aria-label={drawing ? '그리기 끝내기' : '그리기'}
+              aria-pressed={drawing}
+              onClick={() => setDrawing((d) => !d)}
+              className={clsx('absolute top-3 right-14 rounded-full p-1.5 text-white', drawing ? 'bg-primary' : 'bg-black/50')}
+            >
+              <Pencil size={18} />
+            </button>
           </div>
 
           <div className="flex w-full max-w-[360px] flex-col gap-4 text-sm md:w-[280px]">
+            {drawing && (
+              <div className="flex flex-col gap-2 rounded-lg border border-primary p-3">
+                <p className="font-semibold">그리기 — 미리보기 위를 끌어서 그리세요</p>
+                <div className="flex items-center gap-2" role="radiogroup" aria-label="펜 색">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      role="radio"
+                      aria-checked={pen.color === c}
+                      aria-label={`펜 색 ${c}`}
+                      onClick={() => setPen((p) => ({ ...p, color: c }))}
+                      className={clsx('h-7 w-7 rounded-full border-2', pen.color === c ? 'border-primary' : 'border-border')}
+                      style={{ background: c }}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-2" role="radiogroup" aria-label="펜 굵기">
+                  {PEN_SIZES.map((w, i) => (
+                    <button
+                      key={w}
+                      role="radio"
+                      aria-checked={pen.width === w}
+                      onClick={() => setPen((p) => ({ ...p, width: w }))}
+                      className={clsx('flex-1 rounded-md border py-1 text-xs', pen.width === w ? 'border-primary text-primary' : 'border-border')}
+                    >
+                      {['가늘게', '보통', '굵게'][i]}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn btn-secondary flex-1" disabled={strokes.length === 0} onClick={() => setStrokes((s) => s.slice(0, -1))}>
+                    <Undo2 size={14} /> 되돌리기
+                  </button>
+                  <button className="btn btn-secondary flex-1" disabled={strokes.length === 0} onClick={() => setStrokes([])}>
+                    모두 지우기
+                  </button>
+                </div>
+                <button className="btn btn-primary" onClick={() => setDrawing(false)}>
+                  완료
+                </button>
+              </div>
+            )}
+            <MusicField value={audio} onChange={setAudio} />
             <div className="flex gap-2" role="radiogroup" aria-label="공개 범위">
               <button
                 role="radio"
