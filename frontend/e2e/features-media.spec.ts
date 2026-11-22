@@ -43,13 +43,20 @@ test('릴스: 좋아요 → 댓글 → 소리 켜기 → 리믹스 만들기 →
   await expect(like).toHaveAttribute('aria-pressed', was === 'true' ? 'false' : 'true')
   await like.click() // 되돌리기
 
-  // 릴스의 댓글 버튼은 게시물 상세(댓글 목록)로 간다
-  await page.getByRole('button', { name: '댓글' }).first().click()
-  await expect(page).toHaveURL(new RegExp(`/p/${sc}`))
-  await page.getByRole('textbox', { name: '댓글 달기' }).fill('E2E 릴스 댓글')
-  await page.getByRole('button', { name: '게시', exact: true }).click()
-  await expect(page.getByText('E2E 릴스 댓글')).toBeVisible()
-  await page.goBack()
+  // 릴스의 댓글 버튼은 그 자리에서 댓글 창을 연다(페이지 이동 없음), 댓글 수가 바로 늘어난다
+  const commentBtn = page.getByRole('button', { name: '댓글', exact: true }).filter({ visible: true }).first()
+  const count = async () => Number((await commentBtn.innerText()).replace(/[^\d]/g, '') || 0)
+  const before = await count()
+  await commentBtn.click()
+  const comments = page.getByRole('dialog', { name: '댓글' })
+  await expect(comments).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/reels/${sc}`))
+  await comments.getByRole('textbox', { name: '댓글 달기' }).fill('E2E 릴스 댓글')
+  await comments.getByRole('button', { name: '게시', exact: true }).click()
+  await expect(comments.getByText('E2E 릴스 댓글')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(comments).toBeHidden()
+  if (before < 1000) await expect.poll(count).toBe(before + 1)
   await expect(reel).toBeVisible()
   F.cleanups.push(async () => {
     for (const [id] of sql(`select c.id from comments c join users u on u.id = c.author_id where u.username = '${F.A}' and c.body = 'E2E 릴스 댓글'`))

@@ -12,12 +12,14 @@ interface Props {
   className?: string
   /** 제목 줄 없이 내용만 (메뉴 시트 등) */
   bare?: boolean
+  /** 모바일에서 아래에 붙는 시트(넓은 화면은 가운데 창) */
+  sheet?: boolean
 }
 
 /**
  * 화면 가운데 뜨는 창. Esc·바깥 클릭으로 닫히고, 열려 있는 동안 키보드 포커스가 창 안에 머문다.
  */
-export function Modal({ open, onClose, title, children, className, bare }: Props) {
+export function Modal({ open, onClose, title, children, className, bare, sheet }: Props) {
   const panel = useRef<HTMLDivElement>(null)
   // onClose는 부모가 그릴 때마다 새 함수일 수 있다. 효과를 다시 돌리면 "닫으면 돌아갈 곳"이 창 안 요소로 바뀌고
   // 포커스가 첫 입력창으로 튀므로, 최신 onClose만 ref로 들고 효과는 열고 닫을 때만 돈다
@@ -76,7 +78,10 @@ export function Modal({ open, onClose, title, children, className, bare }: Props
   if (!open) return null
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className={clsx(
+        'fixed inset-0 z-50 flex justify-center bg-black/60',
+        sheet ? 'items-end md:items-center md:p-4' : 'items-center p-4',
+      )}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -89,6 +94,7 @@ export function Modal({ open, onClose, title, children, className, bare }: Props
         tabIndex={-1}
         className={clsx(
           'flex max-h-[85dvh] w-full max-w-[400px] flex-col overflow-hidden rounded-xl bg-surface text-text shadow-xl outline-none',
+          sheet && 'max-w-none rounded-b-none md:rounded-b-xl',
           className,
         )}
       >

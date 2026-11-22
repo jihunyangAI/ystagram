@@ -26,6 +26,7 @@ import { ShareModal } from '../../components/dm/ShareModal'
 import { RichText } from '../../components/post/RichText'
 import { SaveButton } from '../../components/post/SaveButton'
 import { GiftModal } from '../../components/post/GiftModal'
+import { CommentsSheet } from '../../components/post/CommentsSheet'
 import { GridTiles } from '../../components/post/Grid'
 import { FollowButton } from '../../components/user/FollowButton'
 import { api } from '../../lib/api'
@@ -152,6 +153,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
   const [hidden, setHidden] = useState(false)
   const [gift, setGift] = useState(false)
   const [remixes, setRemixes] = useState(false)
+  const [commenting, setCommenting] = useState(false)
   const original = useRef<HTMLVideoElement>(null)
   const remixOf = post.extras.remixOf?.available ? post.extras.remixOf : null
   const lastTap = useRef(0)
@@ -340,7 +342,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
             className="absolute right-2 bottom-20 text-white md:hidden"
             post={post}
             onLike={() => like.mutate({ post, like: !post.likedByMe })}
-            onComment={() => navigate(`/p/${post.shortcode}`)}
+            onComment={() => setCommenting(true)}
             onRepost={() =>
               repost.mutate(
                 { shortcode: post.shortcode, repost: !post.repostedByMe },
@@ -356,7 +358,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
           className="hidden pb-2 md:flex"
           post={post}
           onLike={() => like.mutate({ post, like: !post.likedByMe })}
-          onComment={() => navigate(`/p/${post.shortcode}`)}
+          onComment={() => setCommenting(true)}
           onRepost={() =>
             repost.mutate(
               { shortcode: post.shortcode, repost: !post.repostedByMe },
@@ -369,6 +371,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
         />
       </div>
       <GiftModal post={post} open={gift} onClose={() => setGift(false)} />
+      <CommentsSheet post={post} open={commenting} onClose={() => setCommenting(false)} />
       {remixes && <RemixesModal shortcode={post.shortcode} onClose={() => setRemixes(false)} />}
       <ShareModal shortcode={post.shortcode} open={sharing} onClose={() => setSharing(false)} />
       <Modal open={more} onClose={() => setMore(false)} bare title="릴스 옵션">
