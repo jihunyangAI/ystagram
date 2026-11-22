@@ -2,6 +2,8 @@ package com.yangstagram.post;
 
 import com.yangstagram.auth.CurrentUser;
 import com.yangstagram.comment.CommentService;
+import com.yangstagram.common.paging.Cursor;
+import com.yangstagram.post.dto.PostDtos.GridItem;
 import com.yangstagram.common.paging.Slice;
 import com.yangstagram.follow.FollowService;
 import com.yangstagram.follow.FollowService.UserListItem;
@@ -49,10 +51,15 @@ public class PostController {
     private final FollowService followService;
     private final NamedParameterJdbcTemplate jdbc;
     private final ScheduledPosts scheduled;
+    private final PostQueries postQueries;
+    private final java.time.Clock clock;
 
     public PostController(PostService postService, CommentService commentService, FollowService followService,
-                          NamedParameterJdbcTemplate jdbc, ScheduledPosts scheduled) {
+                          NamedParameterJdbcTemplate jdbc, ScheduledPosts scheduled,
+                          PostQueries postQueries, java.time.Clock clock) {
         this.scheduled = scheduled;
+        this.postQueries = postQueries;
+        this.clock = clock;
         this.postService = postService;
         this.commentService = commentService;
         this.followService = followService;
@@ -151,6 +158,44 @@ public class PostController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String shortcode) {
         postService.delete(shortcode, CurrentUser.requireId());
+    }
+
+    @PostMapping("/posts/{shortcode}/restore")
+    public PostView restore(@PathVariable String shortcode) {
+        return postService.restore(shortcode, CurrentUser.requireId());
+    }
+
+    @PutMapping("/posts/{shortcode}/archive")
+    public PostView archive(@PathVariable String shortcode) {
+        return postService.archive(shortcode, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/posts/{shortcode}/archive")
+    public PostView unarchive(@PathVariable String shortcode) {
+        return postService.archive(shortcode, CurrentUser.requireId(), false);
+    }
+
+    @PutMapping("/posts/{shortcode}/pin")
+    public PostView pin(@PathVariable String shortcode) {
+        return postService.pin(shortcode, CurrentUser.requireId(), true);
+    }
+
+    @DeleteMapping("/posts/{shortcode}/pin")
+    public PostView unpin(@PathVariable String shortcode) {
+        return postService.pin(shortcode, CurrentUser.requireId(), false);
+    }
+
+    /** 보관함: 보관한 내 게시물 */
+    @GetMapping("/me/archive/posts")
+    public Slice<GridItem> archived(@RequestParam(required = false) String cursor) {
+        return postQueries.archivedGrid(CurrentUser.requireId(), Cursor.decode(cursor), 24);
+    }
+
+    /** 최근 삭제됨: 30일 안에 지운 내 게시물 */
+    @GetMapping("/me/recently-deleted")
+    public Slice<GridItem> recentlyDeleted(@RequestParam(required = false) String cursor) {
+        return postQueries.deletedGrid(CurrentUser.requireId(),
+                java.time.Instant.now(clock).minus(PostService.RESTORE_WINDOW), Cursor.decode(cursor), 24);
     }
 
     // ------------------------------------------------------------ 좋아요
@@ -285,7 +330,7 @@ public class PostController {
         String term = q.strip().toLowerCase();
         return jdbc.query("""
                 select l.id, l.name, l.city, count(p.id) as posts
-                from locations l left join posts p on p.location_id = l.id and p.deleted_at is null
+                from locations l left join posts p on p.location_id = l.id and p.deleted_at is null and p.archived_at is null
                 where :q = '' or lower(l.name) like '%' || :q || '%'
                 group by l.id
                 order by posts desc, l.name

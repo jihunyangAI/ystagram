@@ -71,6 +71,10 @@ public class PostService {
         PostRow row = queries.findByShortcode(shortcode)
                 .orElseThrow(() -> ApiException.notFound("게시물을 찾을 수 없습니다. 삭제되었거나 주소가 잘못되었습니다."));
         followService.requireCanView(viewerId, row.author().id(), row.author().isPrivate());
+        if (row.author().id() != viewerId && isArchived(row.id())) {
+            // 보관한 게시물은 주인만 볼 수 있다
+            throw ApiException.notFound("게시물을 찾을 수 없습니다. 삭제되었거나 주소가 잘못되었습니다.");
+        }
         if (row.author().id() != viewerId) {
             Boolean locked = jdbc.queryForObject("""
                     select p.subscribers_only and not exists (select 1 from subscriptions s where s.subscriber_id = :me
@@ -394,15 +398,84 @@ public class PostService {
         return queries.views(List.of(row.id()), viewerId).getFirst();
     }
 
-    /** 삭제 표시만 한다 (최근 삭제됨 30일 보관은 M2에서 화면을 붙인다) */
+    /** 삭제 표시만 한다. 30일 동안 "최근 삭제됨"에서 되살릴 수 있다 */
     @Transactional
     public void delete(String shortcode, long viewerId) {
         PostRow row = getOwn(shortcode, viewerId);
-        jdbc.update("update posts set deleted_at = :now where id = :id",
+        boolean archived = isArchived(row.id());
+        jdbc.update("update posts set deleted_at = :now, pinned_at = null where id = :id",
                 new MapSqlParameterSource("id", row.id()).addValue("now", Timestamp.from(Instant.now(clock))));
         detachHashtags(row.id());
-        jdbc.update("update users set posts_count = greatest(0, posts_count - 1) where id = :id",
-                Map.of("id", viewerId));
+        if (!archived) adjustPostsCount(viewerId, -1);
+    }
+
+    public static final java.time.Duration RESTORE_WINDOW = java.time.Duration.ofDays(30);
+
+    /** 최근 삭제됨에서 되살리기 (30일 안) */
+    @Transactional
+    public PostView restore(String shortcode, long viewerId) {
+        Map<String, Object> row = jdbc.queryForList("""
+                select id, author_id, deleted_at, archived_at is not null as archived, caption from posts
+                where shortcode = :code and deleted_at is not null
+                """, Map.of("code", shortcode)).stream().findFirst()
+                .orElseThrow(() -> ApiException.notFound("최근 삭제된 게시물이 아닙니다."));
+        if (((Number) row.get("author_id")).longValue() != viewerId) {
+            throw ApiException.forbidden("NOT_AUTHOR", "본인 게시물만 되살릴 수 있습니다.");
+        }
+        Instant deletedAt = ((Timestamp) row.get("deleted_at")).toInstant();
+        if (deletedAt.isBefore(Instant.now(clock).minus(RESTORE_WINDOW))) {
+            throw ApiException.badRequest("RESTORE_EXPIRED", "삭제한 지 30일이 지나 되살릴 수 없습니다.");
+        }
+        long id = ((Number) row.get("id")).longValue();
+        jdbc.update("update posts set deleted_at = null where id = :id", Map.of("id", id));
+        String caption = (String) row.get("caption");
+        if (caption != null) attachHashtags(id, Hashtags.extract(caption));
+        if (!Boolean.TRUE.equals(row.get("archived"))) adjustPostsCount(viewerId, 1);
+        return queries.views(List.of(id), viewerId).getFirst();
+    }
+
+    /** 보관: 나만 보고, 프로필·피드·검색에서는 빠진다. 되돌리면 원래 자리로 */
+    @Transactional
+    public PostView archive(String shortcode, long viewerId, boolean archive) {
+        PostRow row = getOwn(shortcode, viewerId);
+        int n = jdbc.update(archive
+                        ? "update posts set archived_at = :now, pinned_at = null where id = :id and archived_at is null"
+                        : "update posts set archived_at = null where id = :id and archived_at is not null",
+                new MapSqlParameterSource("id", row.id()).addValue("now", Timestamp.from(Instant.now(clock))));
+        if (n == 1) adjustPostsCount(viewerId, archive ? -1 : 1);
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
+    public static final int MAX_PINNED = 3;
+
+    /** 프로필 맨 앞에 고정 (최대 3개) */
+    @Transactional
+    public PostView pin(String shortcode, long viewerId, boolean pin) {
+        PostRow row = getOwn(shortcode, viewerId);
+        if (pin) {
+            if (isArchived(row.id())) throw ApiException.badRequest("ARCHIVED", "보관한 게시물은 고정할 수 없습니다.");
+            Integer pinned = jdbc.queryForObject("""
+                    select count(*) from posts where author_id = :me and pinned_at is not null and deleted_at is null
+                      and archived_at is null and id <> :id
+                    """, Map.of("me", viewerId, "id", row.id()), Integer.class);
+            if (pinned != null && pinned >= MAX_PINNED) {
+                throw ApiException.badRequest("PIN_LIMIT", "게시물은 최대 3개까지 고정할 수 있습니다.");
+            }
+        }
+        jdbc.update(pin ? "update posts set pinned_at = coalesce(pinned_at, :now) where id = :id"
+                        : "update posts set pinned_at = null where id = :id",
+                new MapSqlParameterSource("id", row.id()).addValue("now", Timestamp.from(Instant.now(clock))));
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
+    private boolean isArchived(long postId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("select archived_at is not null from posts where id = :id",
+                Map.of("id", postId), Boolean.class));
+    }
+
+    private void adjustPostsCount(long userId, int delta) {
+        jdbc.update("update users set posts_count = greatest(0, posts_count + :d) where id = :id",
+                Map.of("id", userId, "d", delta));
     }
 
     // ------------------------------------------------------------ 좋아요

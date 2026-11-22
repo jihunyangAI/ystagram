@@ -104,7 +104,7 @@ public class ScheduledPosts {
     private static final String SELECT = """
             select s.id, s.thumb_url, s.caption_start, s.media_count, s.scheduled_at, s.created_at, s.published_at,
                    s.failure, p.shortcode
-            from scheduled_posts s left join posts p on p.id = s.post_id and p.deleted_at is null
+            from scheduled_posts s left join posts p on p.id = s.post_id and p.deleted_at is null and p.archived_at is null
             """;
 
     private static ScheduledView read(java.sql.ResultSet rs) throws java.sql.SQLException {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
   Archive,
+  Trash2,
   Ban,
   BarChart3,
   Bookmark,
@@ -83,7 +84,8 @@ export function SettingsPage() {
       title: '내 활동',
       items: [
         { to: `/${me.user.username}/saved/all`, label: '저장됨', icon: Bookmark },
-        { to: '/archive/stories', label: '보관함', icon: Archive, hint: '지난 스토리' },
+        { to: '/archive/stories', label: '보관함', icon: Archive, hint: '지난 스토리·보관한 게시물' },
+        { to: '/accounts/recently-deleted', label: '최근 삭제됨', icon: Trash2, hint: '지운 게시물 30일 안에 복원' },
         { to: '/insights', label: '인사이트', icon: BarChart3, hint: '도달·노출·참여·팔로워 변화' },
         { to: '/accounts/scheduled', label: '예약된 콘텐츠', icon: CalendarClock, hint: '예약한 게시물 보기·지금 게시·취소' },
       ],

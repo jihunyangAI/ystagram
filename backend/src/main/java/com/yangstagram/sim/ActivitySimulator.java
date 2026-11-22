@@ -240,7 +240,7 @@ public class ActivitySimulator {
         return jdbc.query("""
                 select p.shortcode, a.username from posts p join users a on a.id = p.author_id
                 where p.author_id in (select following_id from follows where follower_id = :a and status = 'ACCEPTED')
-                  and p.deleted_at is null and p.created_at <= :now
+                  and p.deleted_at is null and p.archived_at is null and p.created_at <= :now
                   and not exists (select 1 from likes l where l.user_id = :a and l.post_id = p.id)
                 order by p.created_at desc offset floor(random() * 30) limit 1
                 """, new MapSqlParameterSource("a", actor).addValue("now", Timestamp.from(Instant.now(clock))),
@@ -251,7 +251,7 @@ public class ActivitySimulator {
     private Post postOf(long author, long actor) {
         return jdbc.query("""
                 select p.shortcode, a.username from posts p join users a on a.id = p.author_id
-                where p.author_id = :author and p.deleted_at is null and p.created_at <= :now
+                where p.author_id = :author and p.deleted_at is null and p.archived_at is null and p.created_at <= :now
                   and (not a.is_private or exists (select 1 from follows f where f.follower_id = :a
                        and f.following_id = :author and f.status = 'ACCEPTED'))
                 order by p.created_at desc offset floor(random() * 5) limit 1
@@ -344,7 +344,7 @@ public class ActivitySimulator {
                 select p.id, p.type, m.duration_ms from posts p
                 join users a on a.id = p.author_id
                 join post_media m on m.post_id = p.id and m.position = 0
-                where p.deleted_at is null and p.created_at <= :now and p.author_id <> :a
+                where p.deleted_at is null and p.archived_at is null and p.created_at <= :now and p.author_id <> :a
                   and (p.author_id in (select following_id from follows where follower_id = :a and status = 'ACCEPTED')
                        or (not a.is_private and random() < 0.3))
                 order by p.created_at desc offset floor(random() * 40) limit :n

@@ -126,7 +126,7 @@ public class NotificationService {
                 left join posts p on p.id = n.post_id
                 left join stories s on s.id = n.story_id
                 where n.user_id = :me and n.type <> 'FOLLOW_REQUEST' and u.deleted_at is null
-                  and (n.post_id is null or p.deleted_at is null)
+                  and (n.post_id is null or p.deleted_at is null and p.archived_at is null)
                   and n.created_at > :since and n.created_at <= :now
                 order by n.created_at desc, n.id desc
                 limit :limit

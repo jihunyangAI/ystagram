@@ -104,7 +104,7 @@ class LiveSimulator {
                 select u.id, m.url, m.thumb_url, p.caption
                 from users u
                 join lateral (select p.id, p.caption from posts p where p.author_id = u.id and p.type = 'REEL'
-                              and p.deleted_at is null order by random() limit 1) p on true
+                              and p.deleted_at is null and p.archived_at is null order by random() limit 1) p on true
                 join post_media m on m.post_id = p.id and m.position = 0 and m.media_type = 'VIDEO'
                 where u.is_fake and u.deleted_at is null and u.account_type = 'CREATOR' and not u.is_private
                   and (u.suspended_until is null or u.suspended_until <= current_timestamp)

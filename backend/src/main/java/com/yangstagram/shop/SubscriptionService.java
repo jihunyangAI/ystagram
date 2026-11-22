@@ -161,7 +161,7 @@ public class SubscriptionService {
         return jdbc.query("""
                 select p.shortcode, p.type, p.created_at, m.thumb_url from posts p
                 join post_media m on m.post_id = p.id and m.position = 0
-                where p.author_id = :c and p.subscribers_only and p.deleted_at is null
+                where p.author_id = :c and p.subscribers_only and p.deleted_at is null and p.archived_at is null
                 order by p.created_at desc limit 60
                 """, Map.of("c", creator), (rs, i) -> new ExclusiveItem(open ? rs.getString("shortcode") : null,
                 rs.getString("thumb_url"), rs.getString("type"), !open, rs.getTimestamp("created_at").toInstant()));

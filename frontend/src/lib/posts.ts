@@ -144,6 +144,22 @@ export function useDeletePost() {
   })
 }
 
+/** 내 게시물 상태 바꾸기: 보관·고정 (PUT 켜기 / DELETE 끄기) */
+export function usePostToggle(shortcode: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ what, on }: { what: 'archive' | 'pin'; on: boolean }) =>
+      on ? api.put<PostView>(`/api/posts/${shortcode}/${what}`) : api.delete<PostView>(`/api/posts/${shortcode}/${what}`),
+    onSuccess: (post, { what, on }) => {
+      if (what === 'archive' && on) removePost(qc, shortcode)
+      else patchPost(qc, shortcode, () => post)
+      qc.setQueryData(['post', shortcode], post)
+      qc.invalidateQueries({ queryKey: ['grid'] })
+      qc.invalidateQueries({ queryKey: ['profile'] })
+    },
+  })
+}
+
 export interface PostPatch {
   caption?: string
   location?: string

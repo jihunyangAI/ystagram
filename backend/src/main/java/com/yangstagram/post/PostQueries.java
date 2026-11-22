@@ -155,7 +155,7 @@ public class PostQueries {
                 ), items as (
                   select p.id as post_id, p.created_at as ts, null::bigint as reposter
                   from posts p join users a on a.id = p.author_id
-                  where p.deleted_at is null and a.deleted_at is null
+                  where p.deleted_at is null and p.archived_at is null and a.deleted_at is null
                     and ((p.author_id = :me and not :fav) or p.author_id in (select id from followees)
                          or exists (select 1 from post_collaborators pc where pc.post_id = p.id and pc.status = 'ACCEPTED'
                                     and (pc.user_id in (select id from followees) or (pc.user_id = :me and not :fav))))
@@ -167,7 +167,7 @@ public class PostQueries {
                   join posts p on p.id = r.post_id
                   join users a on a.id = p.author_id
                   where not :fav and r.user_id in (select id from followees)
-                    and p.deleted_at is null and a.deleted_at is null and not a.is_private and not p.trial
+                    and p.deleted_at is null and p.archived_at is null and a.deleted_at is null and not a.is_private and not p.trial
                     and not p.subscribers_only
                     and (a.suspended_until is null or a.suspended_until <= current_timestamp)
                     and p.author_id <> :me and p.author_id not in (select id from followees)
@@ -234,12 +234,41 @@ public class PostQueries {
 
     // ------------------------------------------------------------ 그리드
 
-    /** 프로필 그리드: 최신순. 권한 확인은 호출하는 쪽에서 한다. */
+    /** 프로필 그리드: 고정한 게시물(최대 3개)이 맨 앞, 나머지는 최신순. 권한 확인은 호출하는 쪽에서 한다. */
     public Slice<GridItem> grid(long authorId, long viewerId, Cursor cursor, int limit) {
-        return gridOf("posts p join users a on a.id = p.author_id where (p.author_id = :author or exists ("
+        Slice<GridItem> rest = gridOf("posts p join users a on a.id = p.author_id where (p.author_id = :author or exists ("
                         + "select 1 from post_collaborators pc where pc.post_id = p.id and pc.user_id = :author "
-                        + "and pc.status = 'ACCEPTED')) and" + NOT_TRIAL,
+                        + "and pc.status = 'ACCEPTED')) and not (p.author_id = :author and p.pinned_at is not null) and"
+                        + NOT_TRIAL,
                 "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
+        if (cursor != null) return rest;
+        List<GridItem> pinned = jdbc.query("""
+                select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
+                       p.type, p.view_count, m.thumb_url,
+                       (select count(*) from post_media x where x.post_id = p.id) as media_count
+                from posts p join post_media m on m.post_id = p.id and m.position = 0
+                where p.author_id = :author and p.pinned_at is not null and p.deleted_at is null
+                  and p.archived_at is null and not p.trial
+                order by p.pinned_at desc limit 3
+                """, new MapSqlParameterSource("author", authorId), (rs, i) -> gridItem(rs, viewerId).pinnedCopy());
+        if (pinned.isEmpty()) return rest;
+        List<GridItem> all = new ArrayList<>(pinned);
+        all.addAll(rest.items());
+        return new Slice<>(all, rest.nextCursor());
+    }
+
+    /** 내 보관함(보관한 게시물, 보관한 순) */
+    public Slice<GridItem> archivedGrid(long viewerId, Cursor cursor, int limit) {
+        return gridOfAny("posts p join users a on a.id = p.author_id where p.author_id = :me "
+                        + "and p.archived_at is not null and p.deleted_at is null",
+                "p.archived_at", new MapSqlParameterSource(), viewerId, cursor, limit);
+    }
+
+    /** 최근 삭제됨: 지운 지 30일이 안 된 내 게시물 (지운 순) */
+    public Slice<GridItem> deletedGrid(long viewerId, Instant since, Cursor cursor, int limit) {
+        return gridOfAny("posts p join users a on a.id = p.author_id where p.author_id = :me "
+                        + "and p.deleted_at is not null and p.deleted_at > :since",
+                "p.deleted_at", new MapSqlParameterSource("since", Timestamp.from(since)), viewerId, cursor, limit);
     }
 
     /** 프로필 "릴스" 탭 */
@@ -294,7 +323,7 @@ public class PostQueries {
                 select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
                        p.type, p.view_count,
                        m.thumb_url, (select count(*) from post_media x where x.post_id = p.id) as media_count
-                from %s and p.deleted_at is null and a.deleted_at is null
+                from %s and p.deleted_at is null and p.archived_at is null and a.deleted_at is null
                 order by p.like_count desc, p.id desc
                 limit :limit
                 """.formatted(joinMedia(fromWhere)), p, (rs, i) -> gridItem(rs, viewerId));
@@ -306,6 +335,13 @@ public class PostQueries {
      */
     private Slice<GridItem> gridOf(String fromWhere, String ts, MapSqlParameterSource p, long viewerId,
                                    Cursor cursor, int limit) {
+        return gridOfAny(fromWhere + " and p.deleted_at is null and p.archived_at is null and a.deleted_at is null",
+                ts, p, viewerId, cursor, limit);
+    }
+
+    /** gridOf와 같지만 삭제·보관 조건을 붙이지 않는다 (보관함·최근 삭제됨) */
+    private Slice<GridItem> gridOfAny(String fromWhere, String ts, MapSqlParameterSource p, long viewerId,
+                                      Cursor cursor, int limit) {
         p.addValue("me", viewerId).addValue("limit", limit + 1);
         String after = "";
         if (cursor != null) {
@@ -317,7 +353,7 @@ public class PostQueries {
                 select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
                        p.type, p.view_count, %s as ts, m.thumb_url,
                        (select count(*) from post_media x where x.post_id = p.id) as media_count
-                from %s and p.deleted_at is null and a.deleted_at is null %s
+                from %s %s
                 order by %s desc, p.id desc
                 limit :limit
                 """.formatted(ts, joinMedia(fromWhere), after, ts), p, (rs, i) -> {
@@ -342,7 +378,7 @@ public class PostQueries {
         boolean hidden = rs.getBoolean("hide_like_count") && rs.getLong("author_id") != viewerId;
         return new GridItem(rs.getString("shortcode"), rs.getString("thumb_url"), rs.getInt("media_count"),
                 hidden ? null : rs.getInt("like_count"), rs.getInt("comment_count"), rs.getString("type"),
-                rs.getInt("view_count"), null);
+                rs.getInt("view_count"), null, false);
     }
 
     // ------------------------------------------------------------ 채우기
@@ -467,6 +503,10 @@ public class PostQueries {
         Map<Long, Boolean> allow = new HashMap<>();
         Map<Long, Boolean> exclusive = new HashMap<>();
         Map<Long, Long> authorOf = new HashMap<>();
+        Map<Long, boolean[]> states = new HashMap<>();
+        jdbc.query("select id, archived_at is not null, pinned_at is not null from posts where id in (:ids)", p, rs -> {
+            states.put(rs.getLong(1), new boolean[] {rs.getBoolean(2), rs.getBoolean(3)});
+        });
         jdbc.query("""
                 select r.id, r.allow_remix, r.subscribers_only, r.author_id, r.remix_of_id, p.shortcode as o_code,
                        om.url as o_url, om.thumb_url as o_thumb, om.duration_ms as o_duration,
@@ -517,7 +557,8 @@ public class PostQueries {
             boolean mine = authorOf.getOrDefault(id, -1L) == viewerId;
             result.put(id, new Extras(remixOf.get(id), remixCounts.getOrDefault(id, 0), allow.getOrDefault(id, true),
                     products.getOrDefault(id, List.of()), exclusive.getOrDefault(id, false),
-                    mine ? gifts.getOrDefault(id, 0L) : null));
+                    mine ? gifts.getOrDefault(id, 0L) : null,
+                    mine && states.getOrDefault(id, new boolean[2])[0], mine && states.getOrDefault(id, new boolean[2])[1]));
         }
         return result;
     }
@@ -528,7 +569,7 @@ public class PostQueries {
                 select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id, p.type,
                        p.view_count, m.thumb_url, 1 as media_count
                 from posts p join users a on a.id = p.author_id join post_media m on m.post_id = p.id and m.position = 0
-                where p.remix_of_id = :id and p.deleted_at is null and a.deleted_at is null and %s
+                where p.remix_of_id = :id and p.deleted_at is null and p.archived_at is null and a.deleted_at is null and %s
                 order by p.created_at desc limit 60
                 """.formatted(VISIBLE), new MapSqlParameterSource("id", postId).addValue("me", viewerId),
                 (rs, i) -> gridItem(rs, viewerId));

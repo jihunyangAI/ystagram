@@ -410,7 +410,7 @@ public class DmService {
     public List<Long> share(long me, String shortcode, List<String> usernames, String rawBody) {
         Long postId = jdbc.query("""
                 select p.id from posts p join users a on a.id = p.author_id
-                where p.shortcode = :code and p.deleted_at is null and %s
+                where p.shortcode = :code and p.deleted_at is null and p.archived_at is null and %s
                 """.formatted(PostQueries.VISIBLE), Map.of("code", shortcode, "me", me),
                 (rs, i) -> rs.getLong(1)).stream().findFirst()
                 .orElseThrow(() -> ApiException.notFound("게시물을 찾을 수 없습니다."));

@@ -52,7 +52,7 @@ public class AdService {
                 from ads ad
                 join posts p on p.id = ad.post_id
                 join users adv on adv.id = ad.advertiser_id
-                where ad.active and p.deleted_at is null and adv.deleted_at is null and adv.id <> :me
+                where ad.active and p.deleted_at is null and p.archived_at is null and adv.deleted_at is null and adv.id <> :me
                   and ad.post_id not in (:exclude)
                   and not exists (select 1 from events h where h.user_id = :me and h.type = 'AD_HIDE'
                                   and h.post_id = ad.post_id)

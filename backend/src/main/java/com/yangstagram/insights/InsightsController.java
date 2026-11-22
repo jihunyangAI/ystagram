@@ -119,7 +119,7 @@ public class InsightsController {
                 from events e
                 join posts p on p.id = e.post_id
                 join post_media m on m.post_id = p.id and m.position = 0
-                where p.author_id = :me and p.deleted_at is null and e.type = 'IMPRESSION'
+                where p.author_id = :me and p.deleted_at is null and p.archived_at is null and e.type = 'IMPRESSION'
                   and e.created_at > :from and e.created_at <= :to
                 group by p.id, m.thumb_url
                 order by reach desc, p.id desc
@@ -168,7 +168,7 @@ public class InsightsController {
                 select p.id, p.author_id, p.like_count, p.comment_count, p.save_count, p.created_at,
                        p.trial, p.trial_shared_at, m.duration_ms
                 from posts p left join post_media m on m.post_id = p.id and m.position = 0
-                where p.shortcode = :code and p.deleted_at is null
+                where p.shortcode = :code and p.deleted_at is null and p.archived_at is null
                 """, Map.of("code", shortcode)).stream().findFirst()
                 .orElseThrow(() -> ApiException.notFound("게시물을 찾을 수 없습니다."));
         if (((Number) row.get("author_id")).longValue() != me) {

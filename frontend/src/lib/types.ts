@@ -191,6 +191,10 @@ export interface PostExtras {
   subscribersOnly: boolean
   /** 받은 별 (작성자에게만) */
   giftStars: number | null
+  /** 보관함에 있음 (작성자에게만) */
+  archived: boolean
+  /** 프로필에 고정됨 (작성자에게만) */
+  pinned: boolean
 }
 
 export interface ProductView {
@@ -249,6 +253,8 @@ export interface GridItem {
   type: 'PHOTO' | 'CAROUSEL' | 'REEL'
   viewCount: number
   ranking: Ranking | null
+  /** 프로필 맨 앞에 고정한 게시물 */
+  pinned: boolean
 }
 
 /** 점수 내역의 한 줄: 기여도 = 부호 × 가중치 × 값 */

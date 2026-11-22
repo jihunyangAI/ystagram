@@ -61,7 +61,7 @@ public class DiscoverController {
         int size = Recommendations.REELS_PAGE;
         List<Long> ids = jdbc.queryForList("""
                 select p.id from posts p join users a on a.id = p.author_id
-                where p.type = 'REEL' and p.deleted_at is null and a.deleted_at is null and p.created_at <= :now
+                where p.type = 'REEL' and p.deleted_at is null and p.archived_at is null and a.deleted_at is null and p.created_at <= :now
                   and %s and %s
                   and (p.author_id in (select following_id from follows where follower_id = :me and status = 'ACCEPTED')
                        or exists (select 1 from likes l join follows f on f.following_id = l.user_id

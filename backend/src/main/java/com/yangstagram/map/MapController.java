@@ -85,7 +85,7 @@ public class MapController {
                 select l.id, l.name, l.lat, l.lng, count(*) n,
                        (array_agg(m.thumb_url order by p.created_at desc))[1] thumb
                 from locations l
-                join posts p on p.location_id = l.id and p.deleted_at is null
+                join posts p on p.location_id = l.id and p.deleted_at is null and p.archived_at is null
                 join users a on a.id = p.author_id and a.deleted_at is null
                 join post_media m on m.post_id = p.id and m.position = 0
                 where l.lat is not null and %s

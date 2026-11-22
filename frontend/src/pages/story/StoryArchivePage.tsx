@@ -4,6 +4,7 @@ import { Archive, ChevronLeft, X } from 'lucide-react'
 import { nowMs } from '../../lib/clock'
 import { useStoryArchive } from '../../lib/stories'
 import type { StoryView } from '../../lib/types'
+import { ArchiveTabs } from '../post/PostArchivePages'
 
 /** 내 스토리 아카이브: 24시간이 지나 사라진 스토리도 여기에 남는다 (나만 볼 수 있음) */
 export function StoryArchivePage() {
@@ -30,8 +31,9 @@ export function StoryArchivePage() {
         <button aria-label="뒤로" onClick={() => navigate(-1)} className="p-2">
           <ChevronLeft size={26} />
         </button>
-        <h1 className="text-lg font-bold">스토리 아카이브</h1>
+        <h1 className="text-lg font-bold">보관함</h1>
       </header>
+      <ArchiveTabs />
       <p className="px-4 pb-3 text-sm text-muted">
         스토리는 24시간이 지나면 다른 사람에게 보이지 않지만, 아카이브에는 나만 볼 수 있게 남습니다.
       </p>

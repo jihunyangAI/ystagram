@@ -83,6 +83,8 @@ const routes = (t: Targets) => [
   `/stories/${t.other}`,
   `/stories/highlights/${t.highlight}`,
   '/archive/stories',
+  '/archive/posts',
+  '/accounts/recently-deleted',
   '/create',
   '/create/story',
   `/p/${t.post}`,

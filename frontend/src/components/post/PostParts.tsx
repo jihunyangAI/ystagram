@@ -6,7 +6,7 @@ import { useMe } from '../../lib/auth'
 import { editableNow, formatCount, fullDate, timeAgo } from '../../lib/format'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
-import { patchPost, useAddComment, useDeleteComment, useDeletePost, useToggleFollow, useToggleLike } from '../../lib/posts'
+import { patchPost, useAddComment, useDeleteComment, useDeletePost, usePostToggle, useUpdatePost, useToggleFollow, useToggleLike } from '../../lib/posts'
 import { useCommentActions, useReplies, useToggleRepost } from '../../lib/social'
 import type { CommentView, PostView } from '../../lib/types'
 import { Avatar } from '../Avatar'
@@ -719,6 +719,8 @@ export function PostMenu({
 }) {
   const navigate = useNavigate()
   const remove = useDeletePost()
+  const toggle = usePostToggle(post.shortcode)
+  const update = useUpdatePost(post.shortcode)
   const unfollow = useToggleFollow()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [why, setWhy] = useState(false)
@@ -803,6 +805,62 @@ export function PostMenu({
             )}
             <SheetButton danger onClick={() => setConfirmDelete(true)}>
               삭제
+            </SheetButton>
+            <SheetButton
+              onClick={() => {
+                onClose()
+                const on = !post.extras.archived
+                toggle.mutate(
+                  { what: 'archive', on },
+                  {
+                    onSuccess: () => toast(on ? '게시물을 보관했습니다. 보관함에서 나만 볼 수 있어요' : '프로필에 다시 표시합니다'),
+                    onError: (e) => toast(e.message),
+                  },
+                )
+              }}
+            >
+              {post.extras.archived ? '프로필에 표시' : '보관'}
+            </SheetButton>
+            {!post.extras.archived && (
+              <SheetButton
+                onClick={() => {
+                  onClose()
+                  const on = !post.extras.pinned
+                  toggle.mutate(
+                    { what: 'pin', on },
+                    {
+                      onSuccess: () => toast(on ? '프로필에 고정했습니다' : '고정을 해제했습니다'),
+                      onError: (e) => toast(e.message),
+                    },
+                  )
+                }}
+              >
+                {post.extras.pinned ? '프로필에서 고정 해제' : '프로필에 고정'}
+              </SheetButton>
+            )}
+            <SheetButton
+              onClick={() => {
+                onClose()
+                const hide = !post.hideLikeCount
+                update.mutate({ hideLikeCount: hide }, {
+                  onSuccess: () => toast(hide ? '다른 사람에게 좋아요 수를 숨깁니다' : '좋아요 수를 다시 표시합니다'),
+                  onError: (e) => toast(e.message),
+                })
+              }}
+            >
+              {post.hideLikeCount ? '좋아요 수 다시 표시' : '좋아요 수 숨기기'}
+            </SheetButton>
+            <SheetButton
+              onClick={() => {
+                onClose()
+                const off = !post.commentsDisabled
+                update.mutate({ commentsDisabled: off }, {
+                  onSuccess: () => toast(off ? '댓글 기능을 해제했습니다' : '댓글 기능을 다시 켰습니다'),
+                  onError: (e) => toast(e.message),
+                })
+              }}
+            >
+              {post.commentsDisabled ? '댓글 기능 설정' : '댓글 기능 해제'}
             </SheetButton>
             {onEdit && (
               <SheetButton

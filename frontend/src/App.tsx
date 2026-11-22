@@ -39,6 +39,7 @@ import { SettingsPage } from './pages/settings/SettingsPage'
 import { PickListPage, RelationListPage } from './pages/settings/RelationPages'
 import { CreateStoryPage } from './pages/story/CreateStoryPage'
 import { StoryArchivePage } from './pages/story/StoryArchivePage'
+import { PostArchivePage, RecentlyDeletedPage } from './pages/post/PostArchivePages'
 import { StoryViewerPage } from './pages/story/StoryViewerPage'
 
 export default function App() {
@@ -68,6 +69,8 @@ export default function App() {
           <Route path="stories/:username" element={<StoryViewerPage />} />
           <Route path="stories/highlights/:id" element={<StoryViewerPage />} />
           <Route path="archive/stories" element={<StoryArchivePage />} />
+          <Route path="archive/posts" element={<PostArchivePage />} />
+          <Route path="accounts/recently-deleted" element={<RecentlyDeletedPage />} />
           <Route path="create" element={<CreatePostPage />} />
           <Route path="create/story" element={<CreateStoryPage />} />
           <Route path="p/:shortcode" element={<PostPage />} />

@@ -206,7 +206,7 @@ public class CommentService {
                 select c.post_id, c.author_id, p.author_id as post_author,
                        (select count(*) from comments r where r.parent_id = c.id) as replies
                 from comments c join posts p on p.id = c.post_id
-                where c.id = :id and p.deleted_at is null
+                where c.id = :id and p.deleted_at is null and p.archived_at is null
                 """, Map.of("id", commentId));
         if (rows.isEmpty()) {
             throw ApiException.notFound("댓글을 찾을 수 없습니다.");
@@ -296,7 +296,7 @@ public class CommentService {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select c.author_id, c.parent_id, c.created_at, c.pinned_at, c.body, p.shortcode
                 from comments c join posts p on p.id = c.post_id
-                where c.id = :id and p.deleted_at is null
+                where c.id = :id and p.deleted_at is null and p.archived_at is null
                 """, Map.of("id", commentId));
         if (rows.isEmpty()) {
             throw ApiException.notFound("댓글을 찾을 수 없습니다.");

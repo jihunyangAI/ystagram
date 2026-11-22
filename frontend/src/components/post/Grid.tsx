@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import { Clapperboard, Copy, Heart, MessageCircle, Play } from 'lucide-react'
+import { Clapperboard, Copy, Heart, MessageCircle, Pin, Play } from 'lucide-react'
 import clsx from 'clsx'
 import { formatCount } from '../../lib/format'
 import { useGrid } from '../../lib/social'
@@ -25,10 +25,13 @@ export function GridTiles({ items, variant = 'posts' }: { items: GridItem[]; var
           aria-label={`${it.type === 'REEL' ? '릴스' : '게시물'} 보기${it.mediaCount > 1 ? ` (사진 ${it.mediaCount}장)` : ''}`}
         >
           <img src={it.thumbUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-          {it.type === 'REEL' && variant !== 'reels' && (
+          {it.pinned && (
+            <Pin size={18} aria-label="고정됨" className="absolute top-2 right-2 rotate-45 fill-white text-white drop-shadow" />
+          )}
+          {!it.pinned && it.type === 'REEL' && variant !== 'reels' && (
             <Clapperboard size={18} className="absolute top-2 right-2 text-white drop-shadow" aria-hidden />
           )}
-          {it.type !== 'REEL' && it.mediaCount > 1 && (
+          {!it.pinned && it.type !== 'REEL' && it.mediaCount > 1 && (
             <Copy size={18} className="absolute top-2 right-2 rotate-180 text-white drop-shadow" aria-hidden />
           )}
           {variant === 'reels' && (

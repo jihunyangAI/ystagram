@@ -71,11 +71,11 @@ public class SavedController {
         MapSqlParameterSource p = new MapSqlParameterSource("me", me);
         Integer total = jdbc.queryForObject("""
                 select count(*) from saved_posts sp join posts p on p.id = sp.post_id
-                where sp.user_id = :me and p.deleted_at is null
+                where sp.user_id = :me and p.deleted_at is null and p.archived_at is null
                 """, p, Integer.class);
         List<String> allCovers = jdbc.queryForList("""
                 select m.thumb_url from saved_posts sp
-                join posts p on p.id = sp.post_id and p.deleted_at is null
+                join posts p on p.id = sp.post_id and p.deleted_at is null and p.archived_at is null
                 join post_media m on m.post_id = p.id and m.position = 0
                 where sp.user_id = :me order by sp.created_at desc limit 4
                 """, p, String.class);
@@ -86,7 +86,7 @@ public class SavedController {
                 select cp.collection_id, m.thumb_url from (
                   select cp.*, row_number() over (partition by cp.collection_id order by cp.created_at desc) rn
                   from collection_posts cp join collections c on c.id = cp.collection_id
-                  join posts p on p.id = cp.post_id and p.deleted_at is null
+                  join posts p on p.id = cp.post_id and p.deleted_at is null and p.archived_at is null
                   where c.user_id = :me
                 ) cp join post_media m on m.post_id = cp.post_id and m.position = 0
                 where cp.rn <= 4 order by cp.collection_id, cp.rn
@@ -96,7 +96,7 @@ public class SavedController {
         jdbc.query("""
                 select c.id, c.name,
                        (select count(*) from collection_posts cp join posts p on p.id = cp.post_id
-                        where cp.collection_id = c.id and p.deleted_at is null) as cnt
+                        where cp.collection_id = c.id and p.deleted_at is null and p.archived_at is null) as cnt
                 from collections c where c.user_id = :me order by c.updated_at desc, c.id desc
                 """, p, rs -> {
             long id = rs.getLong("id");
@@ -209,11 +209,11 @@ public class SavedController {
                 String.class);
         Integer count = jdbc.queryForObject("""
                 select count(*) from collection_posts cp join posts p on p.id = cp.post_id
-                where cp.collection_id = :id and p.deleted_at is null
+                where cp.collection_id = :id and p.deleted_at is null and p.archived_at is null
                 """, Map.of("id", id), Integer.class);
         List<String> covers = jdbc.queryForList("""
                 select m.thumb_url from collection_posts cp
-                join posts p on p.id = cp.post_id and p.deleted_at is null
+                join posts p on p.id = cp.post_id and p.deleted_at is null and p.archived_at is null
                 join post_media m on m.post_id = p.id and m.position = 0
                 where cp.collection_id = :id order by cp.created_at desc limit 4
                 """, Map.of("id", id), String.class);

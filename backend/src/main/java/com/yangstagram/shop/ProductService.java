@@ -65,7 +65,7 @@ public class ProductService {
             select pr.*, %s,
                    exists (select 1 from product_wishlist w where w.product_id = pr.id and w.user_id = :me) as wished,
                    (select count(*) from post_products pp join posts p on p.id = pp.post_id
-                     where pp.product_id = pr.id and p.deleted_at is null) as tagged
+                     where pp.product_id = pr.id and p.deleted_at is null and p.archived_at is null) as tagged
             from products pr join users u on u.id = pr.seller_id
             """.formatted(UserRows.cols("u"));
 
@@ -114,7 +114,7 @@ public class ProductService {
                        (select count(*) from post_media x where x.post_id = p.id) as media_count
                 from post_products pp join posts p on p.id = pp.post_id join users a on a.id = p.author_id
                 join post_media m on m.post_id = p.id and m.position = 0
-                where pp.product_id = :id and p.deleted_at is null and a.deleted_at is null and %s
+                where pp.product_id = :id and p.deleted_at is null and p.archived_at is null and a.deleted_at is null and %s
                 order by p.created_at desc limit 12
                 """.formatted(PostQueries.VISIBLE), new MapSqlParameterSource("id", id).addValue("me", me),
                 (rs, i) -> PostQueries.gridItem(rs, me));

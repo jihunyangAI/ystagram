@@ -89,7 +89,7 @@ public class Ranker {
                   left join aff on aff.uid = p.author_id
                   left join sn on sn.post_id = p.id
                   %s
-                  where p.deleted_at is null and a.deleted_at is null and p.created_at <= :now
+                  where p.deleted_at is null and p.archived_at is null and a.deleted_at is null and p.created_at <= :now
                     and not exists (select 1 from events ni where ni.user_id = :me and ni.post_id = p.id
                                     and ni.type = 'NOT_INTERESTED')
                     and (%s)

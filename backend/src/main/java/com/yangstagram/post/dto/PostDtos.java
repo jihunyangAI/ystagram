@@ -92,8 +92,8 @@ public final class PostDtos {
      * @param giftStars 받은 별 (작성자 본인에게만, 아니면 null)
      */
     public record Extras(RemixRef remixOf, int remixCount, boolean allowRemix, List<ProductTag> products,
-                         boolean subscribersOnly, Long giftStars) {
-        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null);
+                         boolean subscribersOnly, Long giftStars, boolean archived, boolean pinned) {
+        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false);
     }
 
     /** @param available 원본이 지워졌거나 볼 수 없으면 false (영상 주소 없음) */
@@ -123,10 +123,14 @@ public final class PostDtos {
      * @param viewCount 릴스 조회수 (릴스 탭에 표시)
      */
     public record GridItem(String shortcode, String thumbUrl, int mediaCount, Integer likeCount, int commentCount,
-                           String type, int viewCount, Ranking ranking) {
+                           String type, int viewCount, Ranking ranking, boolean pinned) {
 
         public GridItem withRanking(Ranking r) {
-            return new GridItem(shortcode, thumbUrl, mediaCount, likeCount, commentCount, type, viewCount, r);
+            return new GridItem(shortcode, thumbUrl, mediaCount, likeCount, commentCount, type, viewCount, r, pinned);
+        }
+
+        public GridItem pinnedCopy() {
+            return new GridItem(shortcode, thumbUrl, mediaCount, likeCount, commentCount, type, viewCount, ranking, true);
         }
     }
 

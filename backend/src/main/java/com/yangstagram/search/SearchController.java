@@ -142,7 +142,7 @@ public class SearchController {
     private List<PlaceHit> places(String term, int limit) {
         return jdbc.query("""
                 select l.id, l.name, l.city, count(p.id) as posts
-                from locations l left join posts p on p.location_id = l.id and p.deleted_at is null
+                from locations l left join posts p on p.location_id = l.id and p.deleted_at is null and p.archived_at is null
                 where lower(l.name) like :contains escape '\\' or lower(coalesce(l.city, '')) like :contains escape '\\'
                 group by l.id
                 order by posts desc, l.name
@@ -267,7 +267,7 @@ public class SearchController {
         }
         return jdbc.query("""
                 select l.id, l.name, l.city, count(p.id) as posts
-                from locations l left join posts p on p.location_id = l.id and p.deleted_at is null
+                from locations l left join posts p on p.location_id = l.id and p.deleted_at is null and p.archived_at is null
                 where l.id = :id group by l.id
                 """, Map.of("id", value),
                 (rs, i) -> new PlaceHit(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getInt(4)))
