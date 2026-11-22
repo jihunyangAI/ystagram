@@ -33,6 +33,11 @@ export function timeAgo(iso: string, style: 'short' | 'long' = 'short', now = no
   return d.toLocaleDateString('ko-KR', sameYear ? { month: 'long', day: 'numeric' } : { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
+/** 서버가 최종 판단하지만, 화면에서도 15분이 지나면 "수정"을 숨긴다 (Lab 시간 가속 포함) */
+export function editableNow(createdAt: string, now = nowMs()): boolean {
+  return now - new Date(createdAt).getTime() < 15 * 60_000
+}
+
 /** 툴팁용 전체 날짜 */
 export function fullDate(iso: string): string {
   return new Date(iso).toLocaleString('ko-KR', { dateStyle: 'long', timeStyle: 'short' })

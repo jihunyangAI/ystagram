@@ -76,11 +76,17 @@ cd backend
 
 cd frontend
 npx tsc -b            # 타입 검사
+npm test              # 화면 단위 테스트 (Vitest)
+npm run e2e           # E2E (Playwright): 데모 시나리오 7개 + 360px·키보드·응답 시간
 ```
+
+- E2E는 **실행 중인 개발 서버**(백엔드 + `npm run dev`, medium 시드)에 붙어서 돌고, PC에 설치된 Chrome을 씁니다.
+  만든 게시물·스토리·팔로우·가중치·가상 시계는 끝나면 되돌립니다 (DM 대화·알림 기록은 남음).
 
 ## 알아 둘 것
 
 - 5432 포트는 다른 프로젝트(yangpang)가 쓰고 있어서 Yangstagram DB는 **5433**을 씁니다.
+- 백엔드는 **이 PC에서만**(127.0.0.1:8080) 접속을 받습니다. Lab의 비밀번호 없는 계정 전환이 있어서 네트워크에 열지 않습니다.
 - 백엔드를 꺼도 DB 컨테이너는 계속 켜져 있습니다. 끄려면 `docker compose down` (데이터 유지), 데이터까지 지우려면 `docker compose down -v`.
 - 이 PC의 Windows 보안 정책(Application Control)이 서명 없는 네이티브 모듈을 막아서 `npm run lint`(oxlint)는 실행되지 않습니다. 타입 검사(`npx tsc -b`)와 빌드는 정상입니다.
 - 사진을 새로 받았거나, 기존 DB에 게시물·스토리·DM이 없으면(이전 단계에서 만든 DB) `/lab` → "가짜 데이터 다시 만들기"를 누르세요.

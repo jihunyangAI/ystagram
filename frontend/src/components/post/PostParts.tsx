@@ -3,8 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { Heart, MessageCircle, MoreHorizontal, Pin, Repeat2, Send, Sparkles, Trash2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useMe } from '../../lib/auth'
-import { nowMs } from '../../lib/clock'
-import { formatCount, fullDate, timeAgo } from '../../lib/format'
+import { editableNow, formatCount, fullDate, timeAgo } from '../../lib/format'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { patchPost, useAddComment, useDeleteComment, useDeletePost, useToggleFollow, useToggleLike } from '../../lib/posts'
@@ -590,11 +589,6 @@ export function CommentItem({
       />
     </div>
   )
-}
-
-/** 서버가 최종 판단하지만, 화면에서도 15분이 지나면 "수정"을 숨긴다 (Lab 시간 가속 포함) */
-function editableNow(createdAt: string): boolean {
-  return nowMs() - new Date(createdAt).getTime() < 15 * 60_000
 }
 
 export function CommentInput({

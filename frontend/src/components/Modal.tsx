@@ -19,20 +19,35 @@ interface Props {
  */
 export function Modal({ open, onClose, title, children, className, bare }: Props) {
   const panel = useRef<HTMLDivElement>(null)
+  // onClose는 부모가 그릴 때마다 새 함수일 수 있다. 효과를 다시 돌리면 "닫으면 돌아갈 곳"이 창 안 요소로 바뀌고
+  // 포커스가 첫 입력창으로 튀므로, 최신 onClose만 ref로 들고 효과는 열고 닫을 때만 돈다
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
+  // 닫으면 포커스를 돌려줄 요소. 효과 안에서 읽으면 이미 자식의 autoFocus가 포커스를 가져간 뒤라서, 열리는 순간 그릴 때 기억한다
+  const opener = useRef<HTMLElement | null>(null)
+  const wasOpen = useRef(false)
+  if (open && !wasOpen.current) opener.current = document.activeElement as HTMLElement | null
+  wasOpen.current = open
 
   useEffect(() => {
     if (!open) return
-    const previous = document.activeElement as HTMLElement | null
+    const previous = opener.current
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    // 첫 번째 버튼·입력창으로 포커스
-    const first = panel.current?.querySelector<HTMLElement>('input, textarea, button, a[href]')
-    ;(first ?? panel.current)?.focus()
+    // 입력창이 있으면 입력창, 없으면 내용의 첫 버튼으로 포커스 (제목 줄의 닫기 버튼은 마지막 후보)
+    const p = panel.current
+    const first =
+      p?.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select') ??
+      p?.querySelector<HTMLElement>('button:not([disabled]):not([data-modal-close]), a[href]') ??
+      p?.querySelector<HTMLElement>('[data-modal-close]')
+    ;(first ?? p)?.focus()
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        close.current()
       }
       if (e.key === 'Tab' && panel.current) {
         const items = panel.current.querySelectorAll<HTMLElement>(
@@ -56,7 +71,7 @@ export function Modal({ open, onClose, title, children, className, bare }: Props
       document.body.style.overflow = overflow
       previous?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   return createPortal(
@@ -80,7 +95,7 @@ export function Modal({ open, onClose, title, children, className, bare }: Props
         {!bare && (
           <div className="relative flex h-11 shrink-0 items-center justify-center border-b border-border">
             <h2 className="font-semibold">{title}</h2>
-            <button className="absolute right-2 p-1.5" aria-label="닫기" onClick={onClose}>
+            <button className="absolute right-2 p-1.5" aria-label="닫기" data-modal-close onClick={onClose}>
               <X size={22} />
             </button>
           </div>
