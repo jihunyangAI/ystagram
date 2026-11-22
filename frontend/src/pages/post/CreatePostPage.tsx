@@ -8,6 +8,7 @@ import { CaptionField, MAX_CAPTION, Toggle, countHashtags, useHashtagLimit } fro
 import { toast } from '../../components/Toast'
 import { api } from '../../lib/api'
 import { useMe } from '../../lib/auth'
+import { useSubscription } from '../../lib/shop'
 import type { LocationItem, PostView, ScheduledPost, UserSummary } from '../../lib/types'
 import { fromLocalInput, laterInput, scheduleLabel } from '../../lib/datetime'
 import { EditStep } from './EditStep'
@@ -104,6 +105,8 @@ export function CreatePostPage() {
   const [hideLikeCount, setHide] = useState(false)
   const [commentsDisabled, setNoComments] = useState(false)
   const [aiLabel, setAiLabel] = useState(false)
+  const [subsOnly, setSubsOnly] = useState(false)
+  const { data: mySub } = useSubscription(me?.user.username)
   const [scheduleOn, setScheduleOn] = useState(false)
   const [scheduleAt, setScheduleAt] = useState(() => laterInput(60))
   const [sharing, setSharing] = useState(false)
@@ -176,6 +179,7 @@ export function CreatePostPage() {
         collaborators: collaborators.map((u) => u.username),
         filter: items[0]?.filter === 'normal' ? null : items[0]?.filter,
         aiLabel,
+        subscribersOnly: subsOnly,
         scheduledAt: scheduleOn ? new Date(fromLocalInput(scheduleAt)).toISOString() : null,
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
@@ -379,6 +383,14 @@ export function CreatePostPage() {
                     label="AI 정보 라벨 추가"
                     help="AI로 만들었거나 크게 수정한 사진이면 켜 주세요. 게시물에 'AI 정보'가 표시됩니다."
                   />
+                  {mySub?.price != null && (
+                    <Toggle
+                      checked={subsOnly}
+                      onChange={setSubsOnly}
+                      label="구독자 전용"
+                      help="구독자만 볼 수 있어요. 다른 사람에게는 프로필의 구독자 전용 탭에 잠금으로 보입니다."
+                    />
+                  )}
                 </div>
               </details>
               <div className="border-t border-border pt-4">

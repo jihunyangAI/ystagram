@@ -12,6 +12,7 @@ import { fullDate, timeAgo } from '../../lib/format'
 import { useComments, usePost, useToggleLike } from '../../lib/posts'
 import type { PostView } from '../../lib/types'
 import { NotFoundPage } from '../NotFoundPage'
+import { PostCommerceBar } from '../../components/shop/PostCommerceBar'
 
 /**
  * 게시물 상세 (/p/:shortcode).
@@ -24,6 +25,17 @@ export function PostPage() {
 
   if (isLoading) return <p className="p-10 text-center text-sm text-muted">불러오는 중…</p>
   if (error instanceof ApiError && error.status === 404) return <NotFoundPage />
+  if (error instanceof ApiError && error.code === 'SUBSCRIBERS_ONLY') {
+    return (
+      <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-violet-500 text-violet-500">
+          <Lock size={28} strokeWidth={1.5} />
+        </span>
+        <p className="font-semibold">구독자 전용 게시물입니다</p>
+        <p className="text-sm text-muted">{error.message}</p>
+      </div>
+    )
+  }
   if (error instanceof ApiError && error.code === 'PRIVATE_ACCOUNT') {
     return (
       <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
@@ -82,6 +94,7 @@ function PostDetail({ post }: { post: PostView }) {
         <MediaCarousel
           media={post.media}
           tags={post.tags}
+          products={post.extras.products}
           fit
           onIndexChange={setIndex}
           onDoubleTap={() => !post.likedByMe && like.mutate({ post, like: true })}
@@ -98,6 +111,9 @@ function PostDetail({ post }: { post: PostView }) {
 
         <div className="pt-2">
           <CollabInviteBar post={post} />
+        </div>
+        <div className="md:px-4">
+          <PostCommerceBar post={post} />
         </div>
 
         {/* 캡션 + 댓글 */}

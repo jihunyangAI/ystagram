@@ -1,6 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
-import { Ban, Bookmark, Camera, Clapperboard, Grid3x3, Link2, Lock, Megaphone, Menu, MoreHorizontal, Repeat2, Settings, SquareUser, UserPlus } from 'lucide-react'
+import {
+  Ban,
+  Bookmark,
+  Camera,
+  Clapperboard,
+  Crown,
+  Grid3x3,
+  Link2,
+  Lock,
+  Megaphone,
+  Menu,
+  MoreHorizontal,
+  Repeat2,
+  Settings,
+  ShoppingBag,
+  SquareUser,
+  UserPlus,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import type { LucideIcon } from 'lucide-react'
@@ -20,9 +37,12 @@ import { formatCount } from '../lib/format'
 import { useNotificationUnread, useSavedOverview } from '../lib/social'
 import type { CollectionView, Profile } from '../lib/types'
 import { NotFoundPage } from './NotFoundPage'
+import { ExclusiveTab, ShopTab, SubscribeButton } from '../components/shop/ProfileCommerce'
+import { useSubscription } from '../lib/shop'
+import type { ProductView } from '../lib/types'
 import type { ChannelSummary } from './direct/ChannelPane'
 
-type TabKey = 'posts' | 'reels' | 'reposts' | 'saved' | 'tagged'
+type TabKey = 'posts' | 'reels' | 'reposts' | 'saved' | 'tagged' | 'shop' | 'exclusive'
 
 const TABS: { key: TabKey; label: string; icon: LucideIcon; stage?: string; meOnly?: boolean }[] = [
   { key: 'posts', label: '게시물', icon: Grid3x3 },
@@ -30,6 +50,8 @@ const TABS: { key: TabKey; label: string; icon: LucideIcon; stage?: string; meOn
   { key: 'reposts', label: '리포스트', icon: Repeat2 },
   { key: 'saved', label: '저장됨', icon: Bookmark, meOnly: true },
   { key: 'tagged', label: '태그됨', icon: SquareUser },
+  { key: 'shop', label: '샵', icon: ShoppingBag },
+  { key: 'exclusive', label: '구독자 전용', icon: Crown },
 ]
 
 type ListKind = 'followers' | 'following' | null
@@ -47,6 +69,12 @@ export function ProfilePage() {
     queryFn: () => api.get<Profile>(`/api/users/${encodeURIComponent(username)}`),
   })
   const unread = useNotificationUnread(!!profile?.me)
+  const shop = useQuery({
+    queryKey: ['shop', username],
+    queryFn: () => api.get<ProductView[]>(`/api/users/${encodeURIComponent(username)}/products`),
+    enabled: !!profile && !profile.flags.blocked,
+  })
+  const subscription = useSubscription(profile && !profile.flags.blocked ? username : undefined)
 
   useEffect(() => {
     if (profile) document.title = `${profile.user.fullName}(@${profile.user.username}) • Yangstagram`
@@ -125,6 +153,7 @@ export function ProfilePage() {
       <button className="btn btn-secondary flex-1 md:flex-none" disabled={opening} onClick={message}>
         메시지
       </button>
+      <SubscribeButton username={user.username} />
       <button className="btn btn-secondary md:flex-none" aria-label="옵션" onClick={() => setMenu(true)}>
         <MoreHorizontal size={18} />
       </button>
@@ -133,7 +162,12 @@ export function ProfilePage() {
 
   const hasStory = profile.story !== 'NONE'
   const openStory = () => hasStory && navigate(`/stories/${user.username}`)
-  const tabs = TABS.filter((t) => !t.meOnly || profile.me)
+  const tabs = TABS.filter((t) => {
+    if (t.meOnly && !profile.me) return false
+    if (t.key === 'shop') return (shop.data?.length ?? 0) > 0 || (profile.me && profile.accountType !== 'PERSONAL')
+    if (t.key === 'exclusive') return !!subscription.data && (subscription.data.price != null || subscription.data.exclusiveCount > 0)
+    return true
+  })
 
   return (
     <div className="mx-auto w-full max-w-[935px]">
@@ -165,8 +199,12 @@ export function ProfilePage() {
             aria-label={hasStory ? `${user.username}님의 스토리 보기` : undefined}
             tabIndex={hasStory ? 0 : -1}
           >
-            <StoryRingAvatar user={user} ring={profile.story} size={150} className="hidden md:inline-flex" />
-            <StoryRingAvatar user={user} ring={profile.story} size={86} className="md:hidden" />
+            <span className="hidden md:inline-flex">
+              <StoryRingAvatar user={user} ring={profile.story} size={150} />
+            </span>
+            <span className="inline-flex md:hidden">
+              <StoryRingAvatar user={user} ring={profile.story} size={86} />
+            </span>
           </button>
 
           <div className="min-w-0 flex-1">
@@ -276,6 +314,8 @@ export function ProfilePage() {
             />
           )}
           {tab === 'saved' && profile.me && <SavedTab username={user.username} />}
+          {tab === 'shop' && <ShopTab username={user.username} mine={profile.me} />}
+          {tab === 'exclusive' && <ExclusiveTab username={user.username} />}
           {tab === 'reels' && (
             <InfiniteGrid
               queryKey={['reels', user.username]}
@@ -427,7 +467,7 @@ function ChannelCard({ username }: { username: string }) {
   const navigate = useNavigate()
   const { data } = useQuery({
     queryKey: ['user-channel', username],
-    queryFn: () => api.get<ChannelSummary | undefined>(`/api/users/${username}/channel`),
+    queryFn: async () => (await api.get<ChannelSummary | undefined>(`/api/users/${username}/channel`)) ?? null,
   })
   const join = useMutation({
     mutationFn: () => api.put<ChannelSummary>(`/api/channels/${data!.id}/members/me`),

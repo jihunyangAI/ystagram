@@ -12,6 +12,7 @@ import { useCommentActions, useReplies, useToggleRepost } from '../../lib/social
 import type { CommentView, PostView } from '../../lib/types'
 import { Avatar } from '../Avatar'
 import { ConfirmModal, Modal, SheetButton } from '../Modal'
+import { TagProductsModal } from '../../pages/shop/ShopPages'
 import { toast } from '../Toast'
 import { UserBadges } from '../UserBadges'
 import { ShareModal } from '../dm/ShareModal'
@@ -420,6 +421,7 @@ export function CommentItem({
         <Link to={`/${comment.author.username}`} className="mr-1.5 font-semibold">
           {comment.author.username}
         </Link>
+        {comment.subscriber && <SubscriberBadge />}
         <RichText text={comment.body} />
       </p>
     )
@@ -487,6 +489,7 @@ export function CommentItem({
               <Link to={`/${comment.author.username}`} className="mr-1.5 font-semibold">
                 {comment.author.username}
               </Link>
+              {comment.subscriber && <SubscriberBadge />}
               <RichText text={comment.body} />
             </p>
           )}
@@ -704,6 +707,7 @@ export function PostMenu({
   const [why, setWhy] = useState(false)
   const [adWhy, setAdWhy] = useState(false)
   const [report, setReport] = useState(false)
+  const [tagging, setTagging] = useState(false)
 
   return (
     <>
@@ -770,6 +774,16 @@ export function PostMenu({
             >
               인사이트 보기
             </SheetButton>
+            {post.type !== 'REEL' && (
+              <SheetButton
+                onClick={() => {
+                  onClose()
+                  setTagging(true)
+                }}
+              >
+                제품 태그 {post.extras.products.length > 0 ? `(${post.extras.products.length})` : ''}
+              </SheetButton>
+            )}
             <SheetButton danger onClick={() => setConfirmDelete(true)}>
               삭제
             </SheetButton>
@@ -825,6 +839,13 @@ export function PostMenu({
         <SheetButton onClick={onClose}>취소</SheetButton>
       </Modal>
       {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
+      {tagging && (
+        <TagProductsModal
+          shortcode={post.shortcode}
+          current={post.extras.products.map((p) => p.id)}
+          onClose={() => setTagging(false)}
+        />
+      )}
       {report && (
         <ReportModal target={{ type: 'POST', target: post.shortcode, label: '게시물' }} onClose={() => setReport(false)} />
       )}
@@ -865,5 +886,18 @@ export function PostMenu({
         }
       />
     </>
+  )
+}
+
+/** 게시물 주인의 구독자 (보라색 왕관) */
+export function SubscriberBadge() {
+  return (
+    <span
+      title="구독자"
+      aria-label="구독자"
+      className="mr-1.5 inline-flex translate-y-[1px] items-center rounded bg-gradient-to-r from-violet-500 to-fuchsia-500 px-1 text-[10px] leading-4 font-bold text-white"
+    >
+      ♛ 구독자
+    </span>
   )
 }

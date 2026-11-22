@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { Clapperboard, Heart, MessageCircle, MoreHorizontal, Music2, Pause, Plus, Repeat2, Send, Volume2, VolumeX } from 'lucide-react'
+import {
+  Clapperboard,
+  Gift,
+  Heart,
+  MessageCircle,
+  MoreHorizontal,
+  Music2,
+  Pause,
+  Plus,
+  Repeat2,
+  Send,
+  Star,
+  Volume2,
+  VolumeX,
+} from 'lucide-react'
 import clsx from 'clsx'
 import { Avatar } from '../../components/Avatar'
 import { Modal, SheetButton } from '../../components/Modal'
@@ -11,13 +25,15 @@ import { WhyModal } from '../../components/ranking/WhyModal'
 import { ShareModal } from '../../components/dm/ShareModal'
 import { RichText } from '../../components/post/RichText'
 import { SaveButton } from '../../components/post/SaveButton'
+import { GiftModal } from '../../components/post/GiftModal'
+import { GridTiles } from '../../components/post/Grid'
 import { FollowButton } from '../../components/user/FollowButton'
 import { api } from '../../lib/api'
 import { track } from '../../lib/events'
 import { formatCount } from '../../lib/format'
 import { useToggleLike } from '../../lib/posts'
 import { useToggleRepost } from '../../lib/social'
-import type { PostView, RankedPage } from '../../lib/types'
+import type { GridItem, PostView, RankedPage } from '../../lib/types'
 
 type Tab = 'recommended' | 'friends'
 
@@ -134,6 +150,10 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
   const [more, setMore] = useState(false)
   const [why, setWhy] = useState(false)
   const [hidden, setHidden] = useState(false)
+  const [gift, setGift] = useState(false)
+  const [remixes, setRemixes] = useState(false)
+  const original = useRef<HTMLVideoElement>(null)
+  const remixOf = post.extras.remixOf?.available ? post.extras.remixOf : null
   const lastTap = useRef(0)
   const tapTimer = useRef<number | undefined>(undefined)
   const media = post.media[0]
@@ -157,6 +177,10 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
         if (e.intersectionRatio > 0.7) {
           v.currentTime = 0
           void v.play().catch(() => undefined)
+          if (original.current) {
+            original.current.currentTime = 0
+            void original.current.play().catch(() => undefined)
+          }
           setPaused(false)
           if (enteredAt == null) {
             enteredAt = performance.now()
@@ -168,6 +192,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
           }
         } else {
           v.pause()
+          original.current?.pause()
           leave()
         }
       },
@@ -205,9 +230,11 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
       if (!v) return
       if (v.paused) {
         void v.play()
+        void original.current?.play().catch(() => undefined)
         setPaused(false)
       } else {
         v.pause()
+        original.current?.pause()
         setPaused(true)
       }
     }, 300)
@@ -217,20 +244,37 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
     <div ref={box} className="flex h-full snap-start snap-always items-center justify-center md:py-4">
       <div className="relative flex h-full items-end gap-4">
         <div className="relative h-full w-[100vw] overflow-hidden bg-black md:aspect-[9/16] md:w-auto md:rounded-lg">
-          {media && (
-            <video
-              ref={video}
-              src={media.url}
-              poster={media.thumbUrl}
-              muted={muted}
-              loop
-              playsInline
-              preload="metadata"
-              onClick={onTap}
-              aria-label={`${post.author.username}님의 릴스`}
-              className="h-full w-full object-cover"
-            />
-          )}
+          {/* 리믹스: 왼쪽 원본(소리 끔) + 오른쪽 리믹스 */}
+          <div className="flex h-full w-full">
+            {remixOf?.videoUrl && (
+              <video
+                ref={original}
+                src={remixOf.videoUrl}
+                poster={remixOf.thumbUrl ?? undefined}
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                onClick={onTap}
+                aria-label="원본 릴스"
+                className="h-full w-1/2 border-r border-black object-cover"
+              />
+            )}
+            {media && (
+              <video
+                ref={video}
+                src={media.url}
+                poster={media.thumbUrl}
+                muted={muted}
+                loop
+                playsInline
+                preload="metadata"
+                onClick={onTap}
+                aria-label={`${post.author.username}님의 릴스`}
+                className={clsx('h-full object-cover', remixOf?.videoUrl ? 'w-1/2' : 'w-full')}
+              />
+            )}
+          </div>
           {paused && (
             <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <Pause size={56} className="fill-white/80 text-white/80" />
@@ -273,9 +317,22 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
                 <RichText text={post.caption} />
               </p>
             )}
+            {remixOf?.shortcode && remixOf.author && (
+              <Link to={`/reels/${remixOf.shortcode}`} className="mt-2 flex items-center gap-1.5 text-xs font-semibold">
+                <Repeat2 size={13} /> {remixOf.author.username}님의 릴스를 리믹스함
+              </Link>
+            )}
+            {post.extras.remixOf && !post.extras.remixOf.available && (
+              <p className="mt-2 text-xs text-white/70">원본 릴스를 볼 수 없어요</p>
+            )}
             <p className="mt-2 flex items-center gap-1.5 text-xs text-white/80">
               <Music2 size={12} /> {post.author.username} · 원본 오디오
             </p>
+            {post.extras.remixCount > 0 && (
+              <button className="mt-1 text-xs text-white/80 underline" onClick={() => setRemixes(true)}>
+                리믹스 {formatCount(post.extras.remixCount)}개 보기
+              </button>
+            )}
           </div>
 
           {/* 오른쪽 세로 버튼 (모바일은 영상 위) */}
@@ -292,6 +349,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
             }
             onShare={() => setSharing(true)}
             onMore={() => setMore(true)}
+            onGift={() => setGift(true)}
           />
         </div>
         <ActionColumn
@@ -307,8 +365,11 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
           }
           onShare={() => setSharing(true)}
           onMore={() => setMore(true)}
+          onGift={() => setGift(true)}
         />
       </div>
+      <GiftModal post={post} open={gift} onClose={() => setGift(false)} />
+      {remixes && <RemixesModal shortcode={post.shortcode} onClose={() => setRemixes(false)} />}
       <ShareModal shortcode={post.shortcode} open={sharing} onClose={() => setSharing(false)} />
       <Modal open={more} onClose={() => setMore(false)} bare title="릴스 옵션">
         {post.ranking?.source === 'SUGGESTED' && (
@@ -342,6 +403,29 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
             인사이트 보기
           </SheetButton>
         )}
+        {post.extras.allowRemix && (
+          <SheetButton
+            onClick={() => {
+              setMore(false)
+              navigate(`/reels/${post.shortcode}/remix`)
+            }}
+          >
+            이 릴스 리믹스하기
+          </SheetButton>
+        )}
+        {post.mine && (
+          <SheetButton
+            onClick={() => {
+              setMore(false)
+              void api
+                .put(`/api/posts/${post.shortcode}/remix-setting`, { allow: !post.extras.allowRemix })
+                .then(() => toast(post.extras.allowRemix ? '리믹스를 껐습니다' : '리믹스를 허용했습니다'))
+                .catch((e) => toast((e as Error).message))
+            }}
+          >
+            {post.extras.allowRemix ? '리믹스 끄기' : '리믹스 허용'}
+          </SheetButton>
+        )}
         <SheetButton
           onClick={() => {
             setMore(false)
@@ -365,6 +449,7 @@ function ActionColumn({
   onRepost,
   onShare,
   onMore,
+  onGift,
 }: {
   post: PostView
   className?: string
@@ -373,6 +458,7 @@ function ActionColumn({
   onRepost: () => void
   onShare: () => void
   onMore: () => void
+  onGift: () => void
 }) {
   const canRepost = !post.mine && !post.author.isPrivate
   return (
@@ -396,11 +482,39 @@ function ActionColumn({
       <button aria-label="공유" onClick={onShare}>
         <Send size={26} />
       </button>
+      {post.mine ? (
+        post.extras.giftStars != null && post.extras.giftStars > 0 && (
+          <span className="flex flex-col items-center gap-1" title="받은 별 (가짜 선물)">
+            <Star size={26} className="fill-amber-400 text-amber-400" />
+            {formatCount(post.extras.giftStars)}
+          </span>
+        )
+      ) : (
+        <button aria-label="선물 보내기" onClick={onGift}>
+          <Gift size={26} />
+        </button>
+      )}
       <SaveButton post={post} />
       <button aria-label="옵션 더 보기" onClick={onMore}>
         <MoreHorizontal size={24} />
       </button>
       <span className="text-[11px] font-normal opacity-80">조회 {formatCount(post.viewCount)}</span>
     </div>
+  )
+}
+
+/** 이 릴스를 리믹스한 릴스 */
+function RemixesModal({ shortcode, onClose }: { shortcode: string; onClose: () => void }) {
+  const { data } = useQuery({
+    queryKey: ['remixes', shortcode],
+    queryFn: () => api.get<GridItem[]>(`/api/posts/${shortcode}/remixes`),
+  })
+  return (
+    <Modal open onClose={onClose} title="리믹스">
+      <div className="max-h-[70vh] overflow-y-auto p-1">
+        {data && data.length === 0 && <p className="p-6 text-center text-sm text-muted">아직 리믹스가 없어요.</p>}
+        {data && <GridTiles items={data} variant="reels" />}
+      </div>
+    </Modal>
   )
 }

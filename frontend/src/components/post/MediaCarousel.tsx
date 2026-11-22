@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ChevronLeft, ChevronRight, Heart, UserRound, Volume2, VolumeX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Heart, ShoppingBag, UserRound, Volume2, VolumeX } from 'lucide-react'
 import clsx from 'clsx'
-import type { MediaView, TagView } from '../../lib/types'
+import { won } from '../../lib/shop'
+import type { MediaView, ProductTag, TagView } from '../../lib/types'
 
 interface Props {
   media: MediaView[]
@@ -15,6 +16,8 @@ interface Props {
   onIndexChange?: (index: number) => void
   /** 사진 속 사람 태그: 한 번 탭하면 이름표가 보인다 */
   tags?: TagView[]
+  /** 제품 태그: 한 번 탭하면 이름·가격표가 보인다 (누르면 제품 페이지) */
+  products?: ProductTag[]
 }
 
 /** 게시물 비율: 첫 장 기준, 인스타그램 허용 범위(세로 3:4 ~ 가로 1.91:1)로 자른다 */
@@ -25,7 +28,7 @@ function ratioOf(m: MediaView): number {
 /**
  * 사진 여러 장 넘기기. 손가락으로 밀거나 화살표·점으로 이동, 두 번 탭하면 하트가 뜬다.
  */
-export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChange, tags = [] }: Props) {
+export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChange, tags = [], products = [] }: Props) {
   const [showTags, setShowTags] = useState(false)
   const [muted, setMuted] = useState(true)
   const single = useRef<number | undefined>(undefined)
@@ -67,6 +70,7 @@ export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChang
     }
   }
   const currentTags = tags.filter((t) => t.mediaIndex === index)
+  const currentProducts = products.filter((p) => p.mediaIndex === index)
 
   return (
     <div
@@ -107,10 +111,34 @@ export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChang
                     {t.user.username}
                   </Link>
                 ))}
+            {showTags &&
+              products
+                .filter((p) => p.mediaIndex === i)
+                .map((p) => (
+                  <Link
+                    key={`p${p.id}`}
+                    to={`/shop/p/${p.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute flex -translate-x-1/2 flex-col rounded-md bg-white/95 px-2.5 py-1 text-left text-xs whitespace-nowrap text-black shadow"
+                    style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                  >
+                    <b className="max-w-[160px] truncate">{p.name}</b>
+                    <span className="text-[11px] text-neutral-600">{won(p.price)}</span>
+                  </Link>
+                ))}
           </div>
         ))}
       </div>
 
+      {currentProducts.length > 0 && (
+        <button
+          aria-label={showTags ? '제품 태그 숨기기' : `태그된 제품 ${currentProducts.length}개 보기`}
+          onClick={() => setShowTags((v) => !v)}
+          className={clsx('absolute bottom-3 rounded-full bg-black/70 p-1.5 text-white', currentTags.length > 0 ? 'left-12' : 'left-3')}
+        >
+          <ShoppingBag size={14} />
+        </button>
+      )}
       {currentTags.length > 0 && (
         <button
           aria-label={showTags ? '태그 숨기기' : `태그된 사람 ${currentTags.length}명 보기`}

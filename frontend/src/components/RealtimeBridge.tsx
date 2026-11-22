@@ -33,6 +33,12 @@ export function notificationVerb(type: NotificationPing['type']): string {
       return '게시물에 회원님을 태그했습니다.'
     case 'COLLAB_INVITE':
       return '게시물 공동 작업에 회원님을 초대했습니다.'
+    case 'REMIX':
+      return '회원님의 릴스를 리믹스했습니다.'
+    case 'SUBSCRIBE':
+      return '회원님을 구독하기 시작했습니다.'
+    case 'GIFT':
+      return '회원님의 릴스에 선물을 보냈습니다:'
   }
 }
 

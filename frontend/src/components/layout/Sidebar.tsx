@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CircleFadingPlus, Clapperboard, FlaskConical, Grid2x2Plus, LogOut, Menu, SquarePlus } from 'lucide-react'
+import { CircleFadingPlus, Clapperboard, FlaskConical, Grid2x2Plus, LogOut, Menu, Radio, SquarePlus } from 'lucide-react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import clsx from 'clsx'
 import { useLogout } from '../../lib/auth'
@@ -111,6 +111,9 @@ function CreateMenu() {
           </Link>
           <Link role="menuitem" to="/create/reel" onClick={() => setOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2">
             릴스 <Clapperboard size={18} />
+          </Link>
+          <Link role="menuitem" to="/live/new" onClick={() => setOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2">
+            라이브 <Radio size={18} />
           </Link>
         </div>
       )}

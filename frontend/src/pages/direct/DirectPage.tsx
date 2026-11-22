@@ -167,6 +167,8 @@ function preview(c: InboxItem, meId: number): string {
       return `${who}스토리에 답장: ${l.text ?? ''}`
     case 'BLEND_INVITE':
       return `${who}Blend 초대`
+    case 'CALL':
+      return `${who}통화`
     case 'NOTE_REPLY':
       return `${who}노트에 답장: ${l.text ?? ''}`
     default:

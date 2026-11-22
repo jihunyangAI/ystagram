@@ -8,6 +8,7 @@ import { ScoreBadge } from '../ranking/ScoreBadge'
 import { EditPostModal } from './EditPostModal'
 import { CarouselDots, MediaCarousel } from './MediaCarousel'
 import { Caption, CollabInviteBar, CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from './PostParts'
+import { PostCommerceBar } from '../shop/PostCommerceBar'
 
 /** 홈 피드의 게시물 카드: 머리 · 사진 · 액션 · 좋아요 · 캡션 · 댓글 미리보기 · 댓글 입력 */
 export function PostCard({ post }: { post: PostView }) {
@@ -51,6 +52,7 @@ export function PostCard({ post }: { post: PostView }) {
         <MediaCarousel
           media={post.media}
           tags={post.tags}
+          products={post.extras.products}
           className="md:rounded-md md:border md:border-border"
           onIndexChange={setIndex}
           // 더블탭은 좋아요만 한다 (이미 눌렀으면 그대로)
@@ -58,6 +60,7 @@ export function PostCard({ post }: { post: PostView }) {
         />
         <ScoreBadge ranking={post.ranking} className="absolute top-2 left-2" />
       </div>
+      <PostCommerceBar post={post} />
       {post.ad && (
         <button
           className="flex w-full items-center justify-between border-b border-border px-3 py-3 text-left text-sm font-semibold text-primary hover:bg-surface-2 md:rounded-b-md"

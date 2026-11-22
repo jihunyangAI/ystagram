@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, Film, TriangleAlert } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Camera, ChevronLeft, Film, TriangleAlert } from 'lucide-react'
 import { toast } from '../../components/Toast'
 import { CaptionField, MAX_CAPTION, Toggle, countHashtags, useHashtagLimit } from '../../components/post/CaptionField'
+import { VideoRecorder } from '../../components/post/VideoRecorder'
 import { api } from '../../lib/api'
+import { useMe } from '../../lib/auth'
+import { useSubscription } from '../../lib/shop'
 import type { PostView } from '../../lib/types'
 
 const MAX_MS = 20 * 60_000
@@ -20,10 +23,23 @@ function formatDuration(ms: number) {
  * 릴스 만들기: 영상 선택 → 커버(첫 화면) 고르기 → 캡션 → 공유.
  * 영상은 변환 없이 올리고, 커버는 고른 순간의 화면을 브라우저에서 JPEG로 만든다.
  * 3분이 넘으면 팔로워가 아닌 사람에게 추천되지 않고, 20분이 넘으면 올릴 수 없다 (기획서 §6.3).
+ * /reels/:shortcode/remix 로 열면 리믹스: 원본과 나란히 보여 주고, 원본에 이어 붙인다 (M5-②).
  */
 export function CreateReelPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { shortcode: remixOf } = useParams()
+  const { data: me } = useMe()
+  const { data: mySub } = useSubscription(me?.user.username)
+  const original = useQuery({
+    queryKey: ['post', remixOf],
+    queryFn: () => api.get<PostView>(`/api/posts/${remixOf}`),
+    enabled: !!remixOf,
+  })
+  const [allowRemix, setAllowRemix] = useState(true)
+  const [subsOnly, setSubsOnly] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [knownMs, setKnownMs] = useState<number | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState<string | null>(null)
   const [duration, setDuration] = useState(0)
@@ -41,8 +57,10 @@ export function CreateReelPage() {
     if (url) URL.revokeObjectURL(url)
   }, [url])
 
-  const pick = (f: File | undefined) => {
+  const pick = (f: File | undefined, recordedMs?: number) => {
     if (!f) return
+    setKnownMs(recordedMs ?? null)
+    if (recordedMs) setDuration(recordedMs)
     if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(f.type)) return toast('MP4 또는 WebM 영상만 올릴 수 있습니다')
     if (f.size > MAX_BYTES) return toast('영상은 200MB까지 올릴 수 있습니다')
     setFile(f)
@@ -88,6 +106,9 @@ export function CreateReelPage() {
         commentsDisabled: noComments,
         aiLabel,
         trial,
+        remixOf: remixOf ?? null,
+        allowRemix,
+        subscribersOnly: subsOnly,
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
       const reel = await api.upload<PostView>('POST', '/api/reels', form)
@@ -108,7 +129,7 @@ export function CreateReelPage() {
         <button aria-label="뒤로" onClick={() => navigate(-1)} className="p-1">
           <ChevronLeft size={26} />
         </button>
-        <h1 className="font-bold">새 릴스</h1>
+        <h1 className="font-bold">{remixOf ? '리믹스' : '새 릴스'}</h1>
         <button
           onClick={share}
           disabled={!file || sharing || tooLong || captionInvalid || !duration}
@@ -118,8 +139,34 @@ export function CreateReelPage() {
         </button>
       </header>
       <input ref={input} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={(e) => pick(e.target.files?.[0])} />
+      <VideoRecorder
+        open={recording}
+        onClose={() => setRecording(false)}
+        onDone={(f, ms) => {
+          setRecording(false)
+          pick(f, ms)
+        }}
+      />
+      {remixOf && original.data && (
+        <p className="w-full max-w-[720px] text-sm text-muted">
+          <b className="text-text">{original.data.author.username}</b>님의 릴스와 나란히 보이는 리믹스를 만들어요. 왼쪽이 원본, 오른쪽이 내 영상입니다.
+        </p>
+      )}
 
       {!url ? (
+        <div className="flex w-full flex-col items-center gap-3">
+        <div className="flex w-full justify-center gap-2">
+        {remixOf && original.data?.media[0] && (
+          <video
+            src={original.data.media[0].url}
+            poster={original.data.media[0].thumbUrl}
+            muted
+            loop
+            autoPlay
+            playsInline
+            className="aspect-[9/16] w-full max-w-[220px] rounded-xl bg-black object-cover"
+          />
+        )}
         <button
           onClick={() => input.current?.click()}
           onDragOver={(e) => e.preventDefault()}
@@ -134,16 +181,34 @@ export function CreateReelPage() {
           <span className="text-xs">MP4·WebM, 20분·200MB까지</span>
           <span className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white">컴퓨터에서 선택</span>
         </button>
+        </div>
+          <button className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-surface-2" onClick={() => setRecording(true)}>
+            <Camera size={18} /> 카메라로 찍기 (15초)
+          </button>
+        </div>
       ) : (
         <div className="flex w-full max-w-[720px] flex-col gap-6 md:flex-row">
           <div className="w-full max-w-[320px] self-center md:self-start">
+            {remixOf && original.data?.media[0] && (
+              <video
+                src={original.data.media[0].url}
+                muted
+                loop
+                autoPlay
+                playsInline
+                className="mb-2 aspect-[9/16] w-1/2 rounded-xl bg-black object-cover"
+              />
+            )}
             <video
               ref={video}
               src={url}
               muted
               playsInline
               preload="auto"
-              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration * 1000)}
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration
+                if (Number.isFinite(d) && !knownMs) setDuration(d * 1000)
+              }}
               className="aspect-[9/16] w-full rounded-xl bg-black object-cover"
             />
             <label className="mt-3 block text-sm">
@@ -185,6 +250,20 @@ export function CreateReelPage() {
               label="시험 릴스"
               help="먼저 팔로워가 아닌 사람에게만 보여 줍니다. 24시간 뒤 인사이트에서 반응을 보고 팔로워에게 공유할지 정하세요."
             />
+            <Toggle
+              checked={allowRemix}
+              onChange={setAllowRemix}
+              label="리믹스 허용"
+              help="다른 사람이 이 릴스와 나란히 보이는 리믹스를 만들 수 있어요."
+            />
+            {mySub?.price != null && (
+              <Toggle
+                checked={subsOnly}
+                onChange={setSubsOnly}
+                label="구독자 전용"
+                help="구독자만 볼 수 있어요. 다른 사람에게는 프로필의 구독자 전용 탭에 잠금으로 보입니다."
+              />
+            )}
             <button className="self-start text-sm text-muted underline" onClick={() => input.current?.click()}>
               다른 영상 선택
             </button>

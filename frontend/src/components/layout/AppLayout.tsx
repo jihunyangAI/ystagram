@@ -4,6 +4,7 @@ import { api } from '../../lib/api'
 import { setClockOffset } from '../../lib/clock'
 import type { LabStatus } from '../../lib/types'
 import { RealtimeBridge } from '../RealtimeBridge'
+import { CallManager } from '../call/CallManager'
 import { useMe } from '../../lib/auth'
 import { ResearchBanner } from '../ResearchBanner'
 import { BottomNav, MobileTopBar } from './MobileBars'
@@ -42,6 +43,7 @@ export function AppLayout() {
   return (
     <div className="min-h-dvh">
       <RealtimeBridge meId={me.user.id} />
+      <CallManager meId={me.user.id} />
       <Sidebar me={me} />
       <div className="md:pl-[72px] xl:pl-[244px]">
         <ResearchBanner />

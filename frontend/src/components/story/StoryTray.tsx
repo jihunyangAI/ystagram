@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router'
+import { useLives } from '../../lib/live'
 import { Plus } from 'lucide-react'
 import { useMe } from '../../lib/auth'
 import { useStoryTray } from '../../lib/stories'
@@ -9,6 +10,7 @@ import { StoryRingAvatar } from './StoryRingAvatar'
 export function StoryTray() {
   const { data: me } = useMe()
   const { data: tray, isLoading } = useStoryTray()
+  const { data: lives } = useLives()
   const navigate = useNavigate()
   if (!me) return null
 
@@ -49,6 +51,25 @@ export function StoryTray() {
             <div className="h-3 w-12 animate-pulse rounded bg-surface-2" />
           </div>
         ))}
+
+      {lives?.map((l) => (
+        <Link
+          key={`live-${l.id}`}
+          to={`/live/${l.id}`}
+          className="flex w-[70px] shrink-0 flex-col items-center gap-1"
+          aria-label={`${l.host.username}님의 라이브 방송`}
+        >
+          <span className="relative rounded-full bg-gradient-to-tr from-[#feda75] via-[#d62976] to-[#4f5bd5] p-[2.5px]">
+            <span className="block rounded-full border-2 border-bg">
+              <Avatar user={l.host} size={57} />
+            </span>
+            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded border-2 border-bg bg-gradient-to-r from-[#d62976] to-[#fa7e1e] px-1 text-[9px] leading-[13px] font-bold text-white">
+              LIVE
+            </span>
+          </span>
+          <span className="w-full truncate text-center text-xs">{l.mine ? '내 라이브' : l.host.username}</span>
+        </Link>
+      ))}
 
       {others.map((t) => (
         <button

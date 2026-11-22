@@ -116,6 +116,8 @@ export interface CommentView {
   replyCount: number
   /** 제한한 사람의 댓글 (게시물 주인이 승인하면 공개) */
   restricted: boolean
+  /** 게시물 주인의 구독자 (보라색 배지) */
+  subscriber: boolean
 }
 
 export interface PostView {
@@ -157,6 +159,64 @@ export interface PostView {
   ad: AdInfo | null
   /** 추천 영역(홈·탐색·릴스)에서 이 자리에 온 이유. 최신순 목록에서는 null */
   ranking: Ranking | null
+  /** 리믹스·제품 태그·구독자 전용·선물 (M5-②) */
+  extras: PostExtras
+}
+
+export interface RemixRef {
+  shortcode: string | null
+  author: UserSummary | null
+  videoUrl: string | null
+  thumbUrl: string | null
+  durationMs: number | null
+  /** 원본이 지워졌거나 볼 수 없으면 false */
+  available: boolean
+}
+
+export interface ProductTag {
+  id: number
+  name: string
+  price: number
+  thumbUrl: string
+  mediaIndex: number
+  x: number
+  y: number
+}
+
+export interface PostExtras {
+  remixOf: RemixRef | null
+  remixCount: number
+  allowRemix: boolean
+  products: ProductTag[]
+  subscribersOnly: boolean
+  /** 받은 별 (작성자에게만) */
+  giftStars: number | null
+}
+
+export interface ProductView {
+  id: number
+  name: string
+  price: number
+  description: string | null
+  imageUrl: string
+  thumbUrl: string
+  seller: UserSummary
+  wishlisted: boolean
+  mine: boolean
+  taggedPosts: number
+  createdAt: string
+}
+
+export interface SubscriptionInfo {
+  creator: UserSummary
+  /** 구독을 받지 않으면 null */
+  price: number | null
+  subscribed: boolean
+  since: string | null
+  renewsAt: string | null
+  subscriberCount: number | null
+  exclusiveCount: number
+  mine: boolean
 }
 
 export interface AdInfo {
@@ -293,6 +353,9 @@ export type NotificationType =
   | 'STORY_LIKE'
   | 'TAG'
   | 'COLLAB_INVITE'
+  | 'REMIX'
+  | 'SUBSCRIBE'
+  | 'GIFT'
 
 export interface ActivityItem {
   id: number
@@ -398,7 +461,7 @@ export interface SavedOverview {
 
 export type DmFolder = 'PRIMARY' | 'GENERAL' | 'REQUEST'
 
-export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY' | 'BLEND_INVITE'
+export type MessageKind = 'TEXT' | 'IMAGE' | 'POST' | 'STORY_REPLY' | 'NOTE_REPLY' | 'BLEND_INVITE' | 'CALL'
 
 export interface InboxItem {
   id: number
@@ -461,6 +524,24 @@ export interface MessageView {
   quote: string | null
   /** Blend 초대 메시지 */
   blend: { id: number; status: 'PENDING' | 'ACTIVE' } | null
+  /** 통화 기록 메시지 */
+  call: { id: number; video: boolean; status: CallStatus; durationSec: number | null } | null
+}
+
+export type CallStatus = 'RINGING' | 'ACTIVE' | 'ENDED' | 'MISSED' | 'DECLINED' | 'CANCELED'
+
+export interface CallView {
+  id: number
+  conversationId: number
+  caller: UserSummary
+  callee: UserSummary
+  video: boolean
+  status: CallStatus
+  createdAt: string
+  answeredAt: string | null
+  endedAt: string | null
+  /** 내가 받는 쪽 */
+  incoming: boolean
 }
 
 export interface ScheduledMessage {

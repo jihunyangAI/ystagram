@@ -10,6 +10,7 @@ const TABS = [
   ['/lab/flags', '기능 플래그'],
   ['/lab/ads', '광고'],
   ['/lab/moderation', '신고 처리'],
+  ['/lab/commerce', '수익·라이브'],
 ] as const
 
 /** Lab 화면 공통 머리: 제목 + 도구 탭 */

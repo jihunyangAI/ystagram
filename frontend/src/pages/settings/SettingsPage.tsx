@@ -8,6 +8,9 @@ import {
   CalendarClock,
   ChevronRight,
   CircleUserRound,
+  Crown,
+  ShoppingBag,
+  Store,
   EyeOff,
   Flag,
   FlaskConical,
@@ -83,6 +86,16 @@ export function SettingsPage() {
         { to: '/archive/stories', label: '보관함', icon: Archive, hint: '지난 스토리' },
         { to: '/insights', label: '인사이트', icon: BarChart3, hint: '도달·노출·참여·팔로워 변화' },
         { to: '/accounts/scheduled', label: '예약된 콘텐츠', icon: CalendarClock, hint: '예약한 게시물 보기·지금 게시·취소' },
+      ],
+    },
+    {
+      title: '쇼핑·구독 (가짜 결제)',
+      items: [
+        { to: '/accounts/shop', label: '쇼핑', icon: ShoppingBag, hint: '위시리스트·주문 내역' },
+        { to: '/accounts/subscriptions', label: '구독', icon: Crown, hint: '구독 중인 크리에이터, 내 구독 가격·구독자' },
+        ...(me.accountType !== 'PERSONAL'
+          ? [{ to: '/shop/manage', label: '제품 관리', icon: Store, hint: '프로필 "샵" 탭에 보일 제품 등록·삭제' }]
+          : []),
       ],
     },
     {

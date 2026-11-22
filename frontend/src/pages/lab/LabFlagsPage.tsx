@@ -87,6 +87,16 @@ export function LabFlagsPage() {
               onChange={(v) => setDraft({ ...draft, recommendAiProfiles: v })}
             />
           </Flag>
+          <Flag title="가짜 라이브" hint="가짜 인플루언서의 라이브(릴스 영상 반복 재생)를 3개쯤 켜 두고, 사람이 보는 라이브에 가짜 팔로워가 들어와 댓글·하트를 보냅니다. 끄면 가짜 라이브도 1분 안에 끝납니다.">
+            <Choice
+              value={draft.liveBots}
+              options={[
+                [true, '켜기'],
+                [false, '끄기'],
+              ]}
+              onChange={(v) => setDraft({ ...draft, liveBots: v })}
+            />
+          </Flag>
           <div className="flex gap-2">
             <button onClick={() => save.mutate(draft)} disabled={save.isPending} className="btn btn-primary">
               저장

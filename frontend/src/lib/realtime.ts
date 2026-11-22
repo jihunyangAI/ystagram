@@ -15,6 +15,14 @@ export interface RealtimeEvent {
     | 'typing'
     | 'story:new'
     | 'channel:new'
+    | 'live:comment'
+    | 'live:heart'
+    | 'live:viewers'
+    | 'live:end'
+    | 'call:incoming'
+    | 'call:accepted'
+    | 'call:ended'
+    | 'rtc:signal'
   data: unknown
 }
 

@@ -13,6 +13,8 @@ export interface Flags {
   autoReply: boolean
   /** AI 생성 프로필도 추천에 넣기 */
   recommendAiProfiles: boolean
+  /** 가짜 라이브(영상 반복) 켜 두기 + 라이브 가짜 시청자 댓글·하트 */
+  liveBots: boolean
 }
 
 export const DEFAULT_FLAGS: Flags = {
@@ -23,6 +25,7 @@ export const DEFAULT_FLAGS: Flags = {
   adsPerPage: 1,
   autoReply: true,
   recommendAiProfiles: false,
+  liveBots: true,
 }
 
 export function useFlags() {

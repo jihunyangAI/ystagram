@@ -1,4 +1,5 @@
-import { Heart, SquarePlus } from 'lucide-react'
+import { useState } from 'react'
+import { CircleFadingPlus, Clapperboard, Grid2x2Plus, Heart, Radio, SquarePlus } from 'lucide-react'
 import { Link, NavLink, useLocation } from 'react-router'
 import clsx from 'clsx'
 import type { Me } from '../../lib/types'
@@ -14,9 +15,7 @@ export function MobileTopBar() {
   if (pathname !== '/') return null
   return (
     <header className="sticky top-0 z-30 flex h-[52px] items-center justify-between border-b border-border bg-bg px-3 md:hidden">
-      <Link to="/create" aria-label="만들기" className="p-1">
-        <SquarePlus size={26} strokeWidth={1.8} />
-      </Link>
+      <MobileCreateMenu />
       <Link to="/" aria-label="홈">
         <Logo />
       </Link>
@@ -25,6 +24,42 @@ export function MobileTopBar() {
         <NotificationDot className="top-1 right-1" />
       </Link>
     </header>
+  )
+}
+
+/** 만들기(+) → 게시물 / 스토리 / 릴스 / 라이브 */
+function MobileCreateMenu() {
+  const [open, setOpen] = useState(false)
+  const items = [
+    { to: '/create', label: '게시물', icon: Grid2x2Plus },
+    { to: '/create/story', label: '스토리', icon: CircleFadingPlus },
+    { to: '/create/reel', label: '릴스', icon: Clapperboard },
+    { to: '/live/new', label: '라이브', icon: Radio },
+  ]
+  return (
+    <div className="relative">
+      <button aria-label="만들기" aria-expanded={open} className="p-1" onClick={() => setOpen((o) => !o)}>
+        <SquarePlus size={26} strokeWidth={open ? 2.6 : 1.8} />
+      </button>
+      {open && (
+        <>
+          <button aria-label="닫기" className="fixed inset-0 z-30 cursor-default" onClick={() => setOpen(false)} />
+          <div role="menu" className="absolute top-full left-0 z-40 mt-1 w-44 overflow-hidden rounded-xl border border-border bg-bg py-1 shadow-lg">
+            {items.map(({ to, label, icon: Icon }) => (
+              <Link
+                key={to}
+                role="menuitem"
+                to={to}
+                onClick={() => setOpen(false)}
+                className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2"
+              >
+                {label} <Icon size={18} />
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 

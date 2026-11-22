@@ -15,6 +15,10 @@ import { ReportsPage, TwoFactorPage } from './pages/settings/SecurityPages'
 import { LabModerationPage } from './pages/lab/LabModerationPage'
 import { MapPage } from './pages/direct/MapPage'
 import { LabAdsPage } from './pages/lab/LabAdsPage'
+import { LiveRoomPage, LiveStartPage } from './pages/live/LivePage'
+import { ManageProductsPage, MyShopPage, ProductPage } from './pages/shop/ShopPages'
+import { SubscriptionsPage } from './pages/shop/SubscriptionsPage'
+import { LabCommercePage } from './pages/lab/LabCommercePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SavedCollectionPage } from './pages/SavedCollectionPage'
@@ -49,6 +53,7 @@ export default function App() {
           <Route path="reels" element={<ReelsPage />} />
           <Route path="reels/:shortcode" element={<ReelsPage />} />
           <Route path="create/reel" element={<CreateReelPage />} />
+          <Route path="reels/:shortcode/remix" element={<CreateReelPage />} />
           <Route path="direct/inbox" element={<DirectPage />} />
           <Route path="direct/t/:id" element={<DirectPage />} />
           <Route path="direct/channel/:channelId" element={<DirectPage />} />
@@ -86,6 +91,13 @@ export default function App() {
           <Route path="accounts/reports" element={<ReportsPage />} />
           <Route path="lab/moderation" element={<LabModerationPage />} />
           <Route path="lab/ads" element={<LabAdsPage />} />
+          <Route path="lab/commerce" element={<LabCommercePage />} />
+          <Route path="live/new" element={<LiveStartPage />} />
+          <Route path="shop/p/:id" element={<ProductPage />} />
+          <Route path="shop/manage" element={<ManageProductsPage />} />
+          <Route path="accounts/shop" element={<MyShopPage />} />
+          <Route path="accounts/subscriptions" element={<SubscriptionsPage />} />
+          <Route path="live/:id" element={<LiveRoomPage />} />
           <Route path=":username" element={<ProfilePage />} />
           <Route path=":username/saved/:id" element={<SavedCollectionPage />} />
           <Route path="*" element={<NotFoundPage />} />
