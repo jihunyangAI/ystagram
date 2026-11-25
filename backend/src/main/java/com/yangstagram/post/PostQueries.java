@@ -79,6 +79,7 @@ public class PostQueries {
               and vs.status = 'ACTIVE'))
             """;
 
+    private static final tools.jackson.databind.json.JsonMapper json = tools.jackson.databind.json.JsonMapper.builder().build();
     private final NamedParameterJdbcTemplate jdbc;
     private final FollowService followService;
     private final StoryRings storyRings;
@@ -422,12 +423,17 @@ public class PostQueries {
 
         Map<Long, List<MediaView>> media = new HashMap<>();
         jdbc.query("""
-                select post_id, url, thumb_url, width, height, alt_text, media_type, duration_ms from post_media
+                select post_id, url, thumb_url, width, height, alt_text, media_type, duration_ms,
+                       trim_start_ms, trim_end_ms, overlays::text as overlays_json from post_media
                 where post_id in (:ids) order by post_id, position
                 """, p, rs -> {
+            String ov = rs.getString("overlays_json");
+            List<com.yangstagram.post.dto.PostDtos.Overlay> overlays = ov == null ? List.of()
+                    : List.of(json.readValue(ov, com.yangstagram.post.dto.PostDtos.Overlay[].class));
             media.computeIfAbsent(rs.getLong("post_id"), k -> new ArrayList<>()).add(new MediaView(
                     rs.getString("url"), rs.getString("thumb_url"), rs.getInt("width"), rs.getInt("height"),
-                    rs.getString("alt_text"), rs.getString("media_type"), (Integer) rs.getObject("duration_ms")));
+                    rs.getString("alt_text"), rs.getString("media_type"), (Integer) rs.getObject("duration_ms"),
+                    (Integer) rs.getObject("trim_start_ms"), (Integer) rs.getObject("trim_end_ms"), overlays));
         });
 
         Map<Long, List<TagView>> tags = new HashMap<>();

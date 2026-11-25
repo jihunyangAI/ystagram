@@ -48,8 +48,8 @@ final class SeedFeatures {
                 insert into ads (post_id, advertiser_id, headline, cta, topic, created_at)
                 select x.id, x.author_id,
                        left(x.full_name || ' — ' || (array['지금 만나 보세요','이번 주 특가','새로 나왔어요',
-                            '첫 방문 10% 할인','오늘만 무료 배송','예약 받는 중'])[1 + floor(random() * 6)::int], 60),
-                       (array['더 알아보기','지금 구매하기','예약하기','쇼핑하기','메시지 보내기'])[1 + floor(random() * 5)::int],
+                            '첫 방문 10% 할인','오늘만 무료 배송','예약 받는 중'])[1 + abs(hashtext(x.id::text)) % 6], 60),
+                       (array['더 알아보기','지금 구매하기','예약하기','쇼핑하기','메시지 보내기'])[1 + abs(hashtext(x.id::text || 'cta')) % 5],
                        x.topic, ?
                 from (
                   select p.id, p.author_id, p.topic, u.full_name,

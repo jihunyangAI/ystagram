@@ -40,6 +40,7 @@ public class PostService {
     public static final int MAX_LOCATION = 100;
     public static final int MAX_ALT_TEXT = 200;
 
+    private static final tools.jackson.databind.json.JsonMapper jsonMapper = tools.jackson.databind.json.JsonMapper.builder().build();
     private final NamedParameterJdbcTemplate jdbc;
     private final PostQueries queries;
     private final FollowService followService;
@@ -306,12 +307,34 @@ public class PostService {
                 .addValue("rec", duration <= RECOMMEND_LIMIT_MS).addValue("now", Timestamp.from(now))
                 .addValue("ai", Boolean.TRUE.equals(req.aiLabel())).addValue("trial", Boolean.TRUE.equals(req.trial())),
                 Long.class);
+        // 자르기·자막: 영상은 그대로 두고 재생 구간과 글자만 저장한다 (기획서 🟡 단순화)
+        Integer trimStart = req.trimStartMs();
+        Integer trimEnd = req.trimEndMs();
+        if (trimStart != null || trimEnd != null) {
+            int s = trimStart == null ? 0 : trimStart;
+            int e = trimEnd == null ? (int) duration : trimEnd;
+            if (s < 0 || e > duration || e - s < 1000) {
+                throw ApiException.badRequest("BAD_TRIM", "자른 구간은 영상 안에서 1초 이상이어야 합니다.");
+            }
+            trimStart = s == 0 ? null : s;
+            trimEnd = e == duration ? null : e;
+        }
+        List<com.yangstagram.post.dto.PostDtos.Overlay> overlays = req.overlays() == null ? List.of() : req.overlays();
+        if (overlays.size() > 10) throw ApiException.badRequest("TOO_MANY_OVERLAYS", "자막은 10개까지 넣을 수 있습니다.");
+        for (var o : overlays) {
+            if (o.text() == null || o.text().isBlank() || o.text().length() > 80 || o.startMs() < 0 || o.endMs() <= o.startMs()
+                    || o.endMs() > duration || o.y() < 0 || o.y() > 1) {
+                throw ApiException.badRequest("BAD_OVERLAY", "자막은 1~80자, 영상 길이 안의 시간으로 넣어 주세요.");
+            }
+        }
         jdbc.update("""
-                insert into post_media (post_id, position, url, thumb_url, width, height, media_type, duration_ms)
-                values (:p, 0, :url, :thumb, :w, :h, 'VIDEO', :d)
+                insert into post_media (post_id, position, url, thumb_url, width, height, media_type, duration_ms,
+                                        trim_start_ms, trim_end_ms, overlays)
+                values (:p, 0, :url, :thumb, :w, :h, 'VIDEO', :d, :ts, :te, cast(:ov as jsonb))
                 """, new MapSqlParameterSource("p", postId).addValue("url", stored.url())
                 .addValue("thumb", cover.thumbUrl()).addValue("w", cover.width()).addValue("h", cover.height())
-                .addValue("d", duration));
+                .addValue("d", duration).addValue("ts", trimStart).addValue("te", trimEnd)
+                .addValue("ov", overlays.isEmpty() ? null : jsonMapper.writeValueAsString(overlays)));
         attachHashtags(postId, Hashtags.extract(caption));
         jdbc.update("update users set posts_count = posts_count + 1 where id = :id", Map.of("id", authorId));
         if (req.audioId() == null) {

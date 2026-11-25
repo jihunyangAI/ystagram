@@ -5,6 +5,7 @@ import { markRead, markUnsent, upsertMessage } from '../lib/dm'
 import { connectRealtime, useRealtimeEvent } from '../lib/realtime'
 import type { MessageView, NotificationPing, NotificationUnread } from '../lib/types'
 import { toast } from './Toast'
+import { browserNotify } from '../lib/browserNotify'
 
 /** 알림 한 줄 문구 (토스트·활동 화면 공통) */
 export function notificationVerb(type: NotificationPing['type']): string {
@@ -61,6 +62,7 @@ export function RealtimeBridge({ meId }: { meId: number }) {
     switch (event.type) {
       case 'notification:new': {
         const ping = event.data as NotificationPing
+        browserNotify(ping.actor.username, `${notificationVerb(ping.type)}${ping.body ? ` ${ping.body}` : ''}`)
         qc.setQueryData<NotificationUnread>(['notif-unread'], (u) => ({ requests: u?.requests ?? 0, count: ping.unread }))
         qc.invalidateQueries({ queryKey: ['activity'] })
         if (ping.type === 'FOLLOW_REQUEST') {
@@ -80,6 +82,7 @@ export function RealtimeBridge({ meId }: { meId: number }) {
         const viewing = pathname === `/direct/t/${m.conversationId}`
         if (m.sender.id !== meId && !viewing) {
           const text = m.body ?? (m.kind === 'IMAGE' ? '사진을 보냈습니다' : m.kind === 'POST' ? '게시물을 보냈습니다' : '메시지')
+          browserNotify(`💬 ${m.sender.username}`, text)
           toast(`💬 ${m.sender.username}: ${text}`)
         }
         break

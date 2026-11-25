@@ -202,7 +202,7 @@ export function StoryViewerPage() {
               key={story.id}
               src={story.mediaUrl}
               alt={story.altText ?? `${story.author.username}님의 스토리`}
-              className="absolute inset-0 h-full w-full object-cover select-none"
+              className={clsx('absolute inset-0 h-full w-full object-cover select-none', story.effect === 'BOOMERANG' && 'boomerang')}
               draggable={false}
             />
             <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/50 to-transparent" />

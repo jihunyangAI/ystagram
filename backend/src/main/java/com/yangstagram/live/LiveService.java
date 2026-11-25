@@ -52,7 +52,8 @@ public class LiveService {
 
     public record LiveView(long id, UserSummary host, String title, String kind, String videoUrl, String posterUrl,
                            String status, Instant startedAt, Instant endedAt, int viewers, int peakViewers,
-                           int totalViewers, int heartCount, int commentCount, int badgeCount, boolean mine) {
+                           int totalViewers, int heartCount, int commentCount, int badgeCount, boolean mine,
+                           UserSummary guest, String guestStatus) {
     }
 
     /** @param badge 배지 단계 (BADGE일 때 1~3) */
@@ -167,24 +168,76 @@ public class LiveService {
 
     LiveView view(long id, long me) {
         List<LiveView> list = jdbc.query("""
-                select l.*, %s from lives l join users u on u.id = l.host_id where l.id = :id
-                """.formatted(UserRows.cols("u")), Map.of("id", id), (rs, i) -> {
+                select l.*, %s, %s from lives l join users u on u.id = l.host_id left join users g on g.id = l.guest_id
+                where l.id = :id
+                """.formatted(UserRows.cols("u"), UserRows.cols("g")), Map.of("id", id), (rs, i) -> {
             UserSummary host = UserRows.read(rs, "u");
+            UserSummary guest = rs.getObject("guest_id") == null ? null : UserRows.read(rs, "g");
             Timestamp ended = rs.getTimestamp("ended_at");
             boolean live = "LIVE".equals(rs.getString("status"));
             return new LiveView(rs.getLong("id"), host, rs.getString("title"), rs.getString("kind"),
                     rs.getString("video_url"), rs.getString("poster_url"), rs.getString("status"),
                     rs.getTimestamp("started_at").toInstant(), ended == null ? null : ended.toInstant(),
                     live ? viewerCount(id) : 0, rs.getInt("peak_viewers"), rs.getInt("total_viewers"),
-                    rs.getInt("heart_count"), rs.getInt("comment_count"), rs.getInt("badge_count"), host.id() == me);
+                    rs.getInt("heart_count"), rs.getInt("comment_count"), rs.getInt("badge_count"), host.id() == me,
+                    guest, rs.getString("guest_status"));
         });
         if (list.isEmpty()) throw ApiException.notFound("라이브를 찾을 수 없습니다.");
         return list.getFirst();
     }
 
+    // ------------------------------------------------------------ 게스트 (⚪ 흉내: 화면에 게스트 자리만, 영상 연결은 없음)
+
+    public record GuestEvent(long liveId, Long guestId, String status) {
+    }
+
+    /** 진행자가 시청 중인 사람을 게스트로 초대 */
+    @Transactional
+    public LiveView inviteGuest(long id, long me, String username) {
+        Map<String, Object> l = row(id);
+        if (((Number) l.get("host_id")).longValue() != me) throw ApiException.forbidden("NOT_HOST", "진행자만 초대할 수 있습니다.");
+        if (!"LIVE".equals(l.get("status"))) throw ApiException.badRequest("ENDED", "끝난 라이브입니다.");
+        List<Long> ids = jdbc.queryForList("""
+                select u.id from users u join live_viewers v on v.user_id = u.id and v.live_id = :id
+                where u.username = :name
+                """, Map.of("id", id, "name", username), Long.class);
+        if (ids.isEmpty()) throw ApiException.badRequest("NOT_WATCHING", "지금 보고 있는 사람만 초대할 수 있습니다.");
+        jdbc.update("update lives set guest_id = :g, guest_status = 'INVITED' where id = :id",
+                Map.of("g", ids.getFirst(), "id", id));
+        realtime.send(ids.getFirst(), "live:guest-invite", new GuestEvent(id, ids.getFirst(), "INVITED"));
+        broadcast(id, "live:guest", new GuestEvent(id, ids.getFirst(), "INVITED"));
+        return view(id, me);
+    }
+
+    /** 초대받은 사람: 수락(JOINED) 또는 거절, 진행자·게스트 누구나 내보내기(remove) */
+    @Transactional
+    public LiveView answerGuest(long id, long me, String action) {
+        Map<String, Object> l = row(id);
+        Long guest = l.get("guest_id") == null ? null : ((Number) l.get("guest_id")).longValue();
+        long host = ((Number) l.get("host_id")).longValue();
+        switch (action) {
+            case "accept" -> {
+                if (guest == null || guest != me || !"INVITED".equals(l.get("guest_status"))) {
+                    throw ApiException.badRequest("NOT_INVITED", "초대받지 않았습니다.");
+                }
+                jdbc.update("update lives set guest_status = 'JOINED' where id = :id", Map.of("id", id));
+            }
+            case "remove" -> {
+                if (guest == null || (me != host && me != guest)) {
+                    throw ApiException.forbidden("NOT_ALLOWED", "진행자나 게스트만 내보낼 수 있습니다.");
+                }
+                jdbc.update("update lives set guest_id = null, guest_status = null where id = :id", Map.of("id", id));
+            }
+            default -> throw ApiException.badRequest("BAD_ACTION", "알 수 없는 요청입니다.");
+        }
+        LiveView v = view(id, me);
+        broadcast(id, "live:guest", new GuestEvent(id, v.guest() == null ? null : v.guest().id(), v.guestStatus()));
+        return v;
+    }
+
     private Map<String, Object> row(long id) {
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select l.host_id, l.status, l.kind, a.is_private from lives l join users a on a.id = l.host_id
+                select l.host_id, l.status, l.kind, l.guest_id, l.guest_status, a.is_private from lives l join users a on a.id = l.host_id
                 where l.id = :id and a.deleted_at is null
                 """, Map.of("id", id));
         if (rows.isEmpty()) throw ApiException.notFound("라이브를 찾을 수 없습니다.");

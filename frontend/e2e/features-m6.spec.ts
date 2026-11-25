@@ -1,8 +1,9 @@
 // M6: §4에 있었지만 빠졌던 기능 — 게시물 ⋯ 메뉴(보관·고정·좋아요 수 숨기기·댓글 끄기), 보관함, 최근 삭제됨
 import { expect, request as pwRequest, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import path from 'node:path'
 import { F, open, other, sheet, useFeatureSetup } from './feature-setup'
-import { BASE, call, createPost, solidPng } from './helpers'
+import { BASE, apiAs, call, createPost, solidPng, sql } from './helpers'
 
 useFeatureSetup()
 
@@ -154,7 +155,7 @@ test('검색·음악: 오디오 검색 → 오디오 페이지(미리 듣기) �
 
 test('스토리: 그리기 → 음악 추가 → 공유 → 보는 사람 화면에 음악 표시', async ({ page }) => {
   await open(page, F.A, '/create/story')
-  await page.locator('input[type="file"]').setInputFiles(solidPng('draw.png', [40, 40, 40], 540, 960))
+  await page.locator('input[type="file"]:not([multiple])').setInputFiles(solidPng('draw.png', [40, 40, 40], 540, 960))
   await page.getByRole('button', { name: '그리기', exact: true }).click()
   const canvas = page.getByLabel('스토리에 그리기')
   const box = (await canvas.boundingBox())!
@@ -433,5 +434,111 @@ test.describe('모바일', () => {
     await swipe(320, 80, 300, '[data-no-swipe]')
     await page.waitForTimeout(400)
     await expect(page).toHaveURL(/\/$/)
+  })
+})
+
+// ------------------------------------------------------------------ ⑥ 릴스 자르기·자막, 스토리 효과, 홍보하기, 라이브 게스트, 브라우저 알림
+
+const CLIP = path.join(import.meta.dirname, '..', '..', 'seed-media', 'reels', 'reel-000.mp4')
+
+test('릴스 자르기·자막: 구간과 자막을 정해 올리면 그 구간만 재생되고 자막이 보인다', async ({ page }) => {
+  test.setTimeout(150_000)
+  await open(page, F.A, '/create/reel')
+  await page.locator('input[type="file"]').first().setInputFiles(CLIP)
+  await page.getByRole('textbox', { name: '문구' }).fill('E2E 자막 릴스')
+  await page.getByLabel('자르기 시작').fill('1000')
+  await page.getByRole('button', { name: /자막 추가/ }).click()
+  await page.getByLabel('1번째 자막', { exact: true }).fill('E2E 자막이에요')
+  await page.getByRole('button', { name: '공유', exact: true }).click()
+  await expect(page).toHaveURL(/\/reels\/[\w-]+$/, { timeout: 90_000 })
+  const sc = page.url().split('/reels/')[1]
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/posts/${sc}`))
+  const post = await call<{ media: { trimStartMs: number | null; overlays: { text: string }[] }[] }>(F.asA, 'GET', `/api/posts/${sc}`)
+  expect(post.media[0].trimStartMs).toBe(1000)
+  expect(post.media[0].overlays[0].text).toBe('E2E 자막이에요')
+  await expect(page.getByLabel('자막').getByText('E2E 자막이에요').first()).toBeVisible({ timeout: 15_000 })
+  const t = await page.locator(`video[aria-label$="님의 릴스"]`).first().evaluate((v: HTMLVideoElement) => v.currentTime)
+  expect(t, '자른 시작점 이후부터 재생').toBeGreaterThanOrEqual(0.9)
+})
+
+test('스토리 효과: 레이아웃(사진 2장) → AR 스티커 → 부메랑 → 공유하면 보는 화면에서 움직인다', async ({ page }) => {
+  await open(page, F.A, '/create/story')
+  await page.getByLabel('레이아웃 사진들').setInputFiles([
+    solidPng('lay1.png', [220, 60, 60], 400, 400),
+    solidPng('lay2.png', [60, 90, 220], 400, 400),
+  ])
+  await expect(page.getByLabel(/스토리 미리보기/)).toBeVisible()
+  await page.getByRole('radio', { name: 'AR 🐶' }).click()
+  await page.getByRole('button', { name: /부메랑/ }).click()
+  await page.getByRole('button', { name: '공유', exact: true }).click()
+  await expect(page.getByText(/스토리를 공유했습니다/)).toBeVisible()
+  const mine = await call<{ id: number; effect: string | null }[]>(F.asA, 'GET', `/api/stories/users/${F.A}`)
+  const story = mine[mine.length - 1]
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/stories/${story.id}`).catch(() => undefined))
+  expect(story.effect).toBe('BOOMERANG')
+  await page.goto(`/stories/${F.A}`)
+  await expect(page.locator('img.boomerang').first()).toBeVisible()
+})
+
+test('홍보하기: 비즈니스 계정 게시물을 홍보 → 성과 → 중단, 개인 계정은 안내', async ({ page }) => {
+  const [[biz, sc]] = sql(`
+    select u.username, p.shortcode from posts p join users u on u.id = p.author_id
+    where u.account_type = 'BUSINESS' and not u.is_private and p.type <> 'REEL' and p.deleted_at is null and p.archived_at is null
+      and not p.trial and p.id not in (select post_id from ads)
+    order by p.id desc limit 1`)
+  F.cleanups.push(async () => {
+    const ctx = await apiAs(biz)
+    await call(ctx, 'DELETE', `/api/posts/${sc}/promotion`).catch(() => undefined)
+    await ctx.dispose()
+  })
+  await open(page, biz, `/p/${sc}`)
+  await menu(page, '홍보하기')
+  const dlg = page.getByRole('dialog', { name: '홍보하기' })
+  await dlg.getByLabel('하루 예산').selectOption('30000')
+  await dlg.getByLabel('홍보 기간').selectOption('7')
+  await dlg.getByRole('button', { name: '홍보 시작' }).click()
+  await expect(page.getByText(/홍보를 시작했습니다/)).toBeVisible()
+  await expect(dlg.getByLabel('홍보 성과')).toContainText('210,000원')
+  await dlg.getByRole('button', { name: '홍보 중단' }).click()
+  await expect(page.getByText('홍보를 중단했습니다')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // 개인 계정
+  const own = await createPost(F.asA, 'E2E 개인 계정 홍보 시도')
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/posts/${own}`).catch(() => undefined))
+  await open(page, F.A, `/p/${own}`)
+  await menu(page, '홍보하기')
+  await expect(page.getByRole('dialog', { name: '홍보하기' }).getByText(/크리에이터·비즈니스 계정만/)).toBeVisible()
+})
+
+test.describe('라이브 게스트·브라우저 알림', () => {
+  test.use({ permissions: ['camera', 'microphone', 'notifications'] })
+
+  test('라이브 게스트: 시청자를 초대 → 수락하면 진행자·게스트 모두에게 게스트 자리', async ({ page, browser }) => {
+    test.setTimeout(120_000)
+    await open(page, F.A, '/live/new')
+    await page.getByPlaceholder('제목 추가 (선택)').fill('E2E 게스트 방송')
+    await page.getByRole('button', { name: /라이브 방송 시작/ }).click()
+    await expect(page).toHaveURL(/\/live\/\d+/)
+    const liveId = page.url().split('/live/')[1]
+    F.cleanups.push(() => call(F.asA, 'POST', `/api/lives/${liveId}/end`).catch(() => undefined))
+
+    const b = await other(browser, F.B, `/live/${liveId}`)
+    await expect(page.getByText(new RegExp(`${F.B}.*참여했습니다`)).first()).toBeVisible()
+    await page.getByRole('button', { name: '게스트 초대' }).click()
+    await page.getByRole('dialog', { name: '게스트 초대' }).getByRole('button', { name: F.B }).click()
+    await expect(page.getByText('초대 수락 기다리는 중')).toBeVisible()
+    await b.page.getByRole('button', { name: '참여하기' }).click()
+    await expect(b.page.getByText('게스트 (영상은 흉내)')).toBeVisible()
+    await expect(page.getByText('게스트 (영상은 흉내)')).toBeVisible()
+    await b.close()
+  })
+
+  test('브라우저 알림: 설정에서 켜면 이 기기에 저장된다', async ({ page }) => {
+    await open(page, F.A, '/accounts/notifications')
+    await page.locator('label').filter({ hasText: '브라우저 알림 (이 기기)' }).click()
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('browserNotify'))).toBe('1')
+    await page.locator('label').filter({ hasText: '브라우저 알림 (이 기기)' }).click()
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('browserNotify'))).toBe('0')
   })
 })

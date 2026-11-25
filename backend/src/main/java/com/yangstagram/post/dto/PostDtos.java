@@ -20,7 +20,11 @@ public final class PostDtos {
      * @param durationMs 영상 길이 (사진이면 null)
      */
     public record MediaView(String url, String thumbUrl, int width, int height, String altText, String type,
-                            Integer durationMs) {
+                            Integer durationMs, Integer trimStartMs, Integer trimEndMs, List<Overlay> overlays) {
+    }
+
+    /** 릴스 자막·글자: startMs~endMs 동안 화면 세로 위치 y(0~1)에 보인다 */
+    public record Overlay(String text, int startMs, int endMs, double y) {
     }
 
     /** 사진 속 사람 태그 (x·y는 사진 대비 0~1) */
@@ -171,7 +175,8 @@ public final class PostDtos {
      *
      * @param trial 시험 릴스: 팔로워가 아닌 사람에게만 보여 주고 24시간 뒤 성과를 본다
      */
-    public record CreateReelRequest(String caption, Long durationMs, Boolean hideLikeCount, Boolean commentsDisabled,
+    public record CreateReelRequest(String caption, Long durationMs, Integer trimStartMs, Integer trimEndMs,
+                                    List<Overlay> overlays, Boolean hideLikeCount, Boolean commentsDisabled,
                                     Boolean aiLabel, Boolean trial, String remixOf, Boolean allowRemix,
                                     Boolean subscribersOnly, Long audioId) {
     }

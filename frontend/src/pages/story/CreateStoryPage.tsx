@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ImagePlus, Pencil, Star, Sticker as StickerIcon, Trash2, Type, Undo2, X } from 'lucide-react'
+import { ChevronLeft, ImagePlus, LayoutGrid, Pencil, Star, Sticker as StickerIcon, Trash2, Type, Undo2, X } from 'lucide-react'
 import clsx from 'clsx'
 import { toast } from '../../components/Toast'
 import { StickerView } from '../../components/story/StickerView'
@@ -75,6 +75,7 @@ function draw(
   boxed: boolean,
   posY: number,
   strokes: Stroke[] = [],
+  ar: string | null = null,
 ) {
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, W, H)
@@ -88,6 +89,13 @@ function draw(
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(p.img, x, y, dw, dh)
   drawStrokes(ctx, strokes)
+  // AR 효과 (🟡 흉내: 얼굴 인식 없이 위쪽 가운데에 큰 스티커)
+  if (ar) {
+    ctx.font = '300px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(ar, W / 2, H * 0.3)
+  }
 
   const lines = text.trim() ? wrap(ctx, text.trim(), W - 160) : []
   if (lines.length === 0) return
@@ -159,6 +167,52 @@ export function CreateStoryPage() {
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [drawing, setDrawing] = useState(false)
   const [pen, setPen] = useState({ color: COLORS[2], width: PEN_SIZES[1] })
+  const [boomerang, setBoomerang] = useState(false)
+  const [ar, setAr] = useState<string | null>(null)
+  const layoutInput = useRef<HTMLInputElement>(null)
+
+  /** 레이아웃: 사진 2~4장을 한 장(9:16)으로 이어 붙인다 */
+  const pickLayout = async (files: FileList | null) => {
+    const list = [...(files ?? [])].filter((x) => x.type.startsWith('image/')).slice(0, 4)
+    if (list.length < 2) return toast('레이아웃은 사진을 2~4장 골라 주세요')
+    const imgs = await Promise.all(
+      list.map(
+        (file) =>
+          new Promise<HTMLImageElement>((resolve, reject) => {
+            const im = new Image()
+            im.onload = () => resolve(im)
+            im.onerror = reject
+            im.src = URL.createObjectURL(file)
+          }),
+      ),
+    )
+    const c = document.createElement('canvas')
+    c.width = W
+    c.height = H
+    const g = c.getContext('2d')!
+    g.fillStyle = '#fff'
+    g.fillRect(0, 0, W, H)
+    const cells =
+      imgs.length === 2
+        ? [[0, 0, W, H / 2], [0, H / 2, W, H / 2]]
+        : imgs.length === 3
+          ? [[0, 0, W, H / 2], [0, H / 2, W / 2, H / 2], [W / 2, H / 2, W / 2, H / 2]]
+          : [[0, 0, W / 2, H / 2], [W / 2, 0, W / 2, H / 2], [0, H / 2, W / 2, H / 2], [W / 2, H / 2, W / 2, H / 2]]
+    imgs.forEach((im, i) => {
+      const [x, y, w, h] = cells[i]
+      const k = Math.max(w / im.naturalWidth, h / im.naturalHeight)
+      const dw = im.naturalWidth * k
+      const dh = im.naturalHeight * k
+      g.save()
+      g.beginPath()
+      g.rect(x + 6, y + 6, w - 12, h - 12)
+      g.clip()
+      g.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh)
+      g.restore()
+      URL.revokeObjectURL(im.src)
+    })
+    c.toBlob((b) => b && pick(new File([b], 'layout.jpg', { type: 'image/jpeg' })), 'image/jpeg', 0.92)
+  }
   const [adding, setAdding] = useState(false)
   const stickerDrag = useRef<{ key: number; rect: DOMRect } | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -190,8 +244,8 @@ export function CreateStoryPage() {
 
   const redraw = useCallback(() => {
     const ctx = canvas.current?.getContext('2d')
-    if (ctx && picked) draw(ctx, picked, offset, zoom, text, color, boxed, posY, strokes)
-  }, [picked, offset, zoom, text, color, boxed, posY, strokes])
+    if (ctx && picked) draw(ctx, picked, offset, zoom, text, color, boxed, posY, strokes, ar)
+  }, [picked, offset, zoom, text, color, boxed, posY, strokes, ar])
   useEffect(redraw, [redraw])
 
   // 끌어서 위치 옮기기 (화면 크기 → 1080×1920 좌표로 환산)
@@ -233,12 +287,12 @@ export function CreateStoryPage() {
       const out = document.createElement('canvas')
       out.width = W
       out.height = H
-      draw(out.getContext('2d')!, picked, offset, zoom, text, color, boxed, posY, strokes)
+      draw(out.getContext('2d')!, picked, offset, zoom, text, color, boxed, posY, strokes, ar)
       const blob = await new Promise<Blob>((resolve, reject) =>
         out.toBlob((b) => (b ? resolve(b) : reject(new Error('사진을 만들지 못했습니다'))), 'image/jpeg', 0.9),
       )
       const stickers = drafts.map(({ key: _key, ...rest }) => rest)
-      await storyApi.create(blob, { altText: text.trim() || undefined, audience, stickers, audioId: audio?.id ?? null })
+      await storyApi.create(blob, { altText: text.trim() || undefined, audience, stickers, audioId: audio?.id ?? null, effect: boomerang ? 'BOOMERANG' : null })
       qc.invalidateQueries({ queryKey: ['story-tray'] })
       qc.invalidateQueries({ queryKey: ['story-archive'] })
       qc.invalidateQueries({ queryKey: ['profile'] })
@@ -283,6 +337,25 @@ export function CreateStoryPage() {
           <span className="text-sm">사진을 선택하<span className="hidden md:inline">거나 끌어다 놓으</span>세요</span>
           <span className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white"><span className="md:hidden">기기에서 선택</span><span className="hidden md:inline">컴퓨터에서 선택</span></span>
         </button>
+      ) : null}
+      {!picked ? (
+        <>
+          <input
+            ref={layoutInput}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            aria-label="레이아웃 사진들"
+            onChange={(e) => {
+              void pickLayout(e.target.files)
+              e.target.value = ''
+            }}
+          />
+          <button className="btn btn-secondary w-full max-w-[360px]" onClick={() => layoutInput.current?.click()}>
+            <LayoutGrid size={16} /> 레이아웃 (사진 2~4장)
+          </button>
+        </>
       ) : (
         <div className="flex w-full flex-col items-center gap-4 md:flex-row md:items-start md:justify-center">
           <div className="relative w-full max-w-[360px]">
@@ -395,6 +468,31 @@ export function CreateStoryPage() {
               </div>
             )}
             <MusicField value={audio} onChange={setAudio} />
+            <div className="space-y-2 border-t border-border pt-4">
+              <p className="font-semibold">효과</p>
+              <button
+                aria-pressed={boomerang}
+                className={clsx('rounded-lg border px-3 py-1.5 text-xs', boomerang ? 'border-primary font-semibold text-primary' : 'border-border')}
+                onClick={() => setBoomerang((b) => !b)}
+              >
+                부메랑 (앞뒤로 움직이기)
+              </button>
+              <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="AR 효과">
+                <span className="text-xs text-muted">AR</span>
+                {[null, '🐶', '🕶️', '👑', '🐰', '😺'].map((e) => (
+                  <button
+                    key={e ?? 'none'}
+                    role="radio"
+                    aria-checked={ar === e}
+                    aria-label={e ? `AR ${e}` : 'AR 없음'}
+                    onClick={() => setAr(e)}
+                    className={clsx('grid size-9 place-items-center rounded-full border text-lg', ar === e ? 'border-primary' : 'border-border')}
+                  >
+                    {e ?? '✕'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2" role="radiogroup" aria-label="공개 범위">
               <button
                 role="radio"

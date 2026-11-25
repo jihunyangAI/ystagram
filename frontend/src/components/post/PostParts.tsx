@@ -23,6 +23,7 @@ import { ReportModal } from '../report/ReportModal'
 import { RichText } from './RichText'
 import { SaveButton } from './SaveButton'
 import { PostNoteModal } from './PostNotes'
+import { PromoteModal } from './PromoteModal'
 
 // ------------------------------------------------------------ 머리 (작성자)
 
@@ -736,6 +737,7 @@ export function PostMenu({
   const [report, setReport] = useState(false)
   const [tagging, setTagging] = useState(false)
   const [noting, setNoting] = useState(false)
+  const [promoting, setPromoting] = useState(false)
 
   return (
     <>
@@ -812,6 +814,16 @@ export function PostMenu({
             >
               인사이트 보기
             </SheetButton>
+            {!post.extras.archived && !post.trial && (
+              <SheetButton
+                onClick={() => {
+                  onClose()
+                  setPromoting(true)
+                }}
+              >
+                홍보하기
+              </SheetButton>
+            )}
             {post.type !== 'REEL' && (
               <SheetButton
                 onClick={() => {
@@ -934,6 +946,7 @@ export function PostMenu({
       </Modal>
       {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
       {noting && <PostNoteModal post={post} open={noting} onClose={() => setNoting(false)} />}
+      {promoting && <PromoteModal post={post} open={promoting} onClose={() => setPromoting(false)} />}
       {tagging && (
         <TagProductsModal
           shortcode={post.shortcode}

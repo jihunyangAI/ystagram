@@ -10,6 +10,8 @@ import { useMe } from '../../lib/auth'
 import { useSubscription } from '../../lib/shop'
 import type { AudioRef, PostView } from '../../lib/types'
 import { MusicField } from '../../components/music/MusicPicker'
+import { ReelEditFields } from '../../components/post/ReelEditFields'
+import type { Overlay } from '../../lib/types'
 
 const MAX_MS = 20 * 60_000
 const RECOMMEND_MS = 3 * 60_000
@@ -38,6 +40,8 @@ export function CreateReelPage() {
     enabled: !!remixOf,
   })
   const [allowRemix, setAllowRemix] = useState(true)
+  const [trim, setTrim] = useState<[number, number] | null>(null)
+  const [overlays, setOverlays] = useState<Overlay[]>([])
   const [subsOnly, setSubsOnly] = useState(false)
   const [recording, setRecording] = useState(false)
   const [knownMs, setKnownMs] = useState<number | null>(null)
@@ -119,6 +123,9 @@ export function CreateReelPage() {
         allowRemix,
         subscribersOnly: subsOnly,
         audioId: audio?.id ?? null,
+        trimStartMs: trim && trim[0] > 0 ? trim[0] : null,
+        trimEndMs: trim && trim[1] < Math.round(duration) ? trim[1] : null,
+        overlays: overlays.filter((o) => o.text.trim()),
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
       const reel = await api.upload<PostView>('POST', '/api/reels', form)
@@ -247,6 +254,15 @@ export function CreateReelPage() {
             {tooLong && <p className="rounded-lg bg-surface-2 p-3 text-xs text-danger">릴스는 20분까지 올릴 수 있습니다.</p>}
             <CaptionField value={caption} onChange={setCaption} />
             {!remixOf && <MusicField value={audio} onChange={setAudio} />}
+            {duration >= 2000 && (
+              <ReelEditFields
+                duration={Math.round(duration)}
+                trim={trim ?? [0, Math.round(duration)]}
+                onTrim={setTrim}
+                overlays={overlays}
+                onOverlays={setOverlays}
+              />
+            )}
             <Toggle checked={hideLikes} onChange={setHideLikes} label="좋아요 수 숨기기" />
             <Toggle checked={noComments} onChange={setNoComments} label="댓글 기능 해제" />
             <Toggle

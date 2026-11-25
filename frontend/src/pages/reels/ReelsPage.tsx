@@ -36,6 +36,7 @@ import { formatCount } from '../../lib/format'
 import { useToggleLike } from '../../lib/posts'
 import { useToggleRepost } from '../../lib/social'
 import type { GridItem, PostView, RankedPage } from '../../lib/types'
+import { OverlayLayer } from '../../components/post/ReelEditFields'
 
 type Tab = 'recommended' | 'friends'
 
@@ -160,6 +161,10 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
   const lastTap = useRef(0)
   const tapTimer = useRef<number | undefined>(undefined)
   const media = post.media[0]
+  // 자르기: 이 구간만 반복 재생 (초)
+  const trimStart = (media?.trimStartMs ?? 0) / 1000
+  const trimEnd = media?.trimEndMs ? media.trimEndMs / 1000 : null
+  const [timeMs, setTimeMs] = useState(0)
 
   // 화면 가운데에 오면 재생 + 조회 1회 기록, 벗어나면 멈춤.
   // 이벤트: 들어올 때 노출, 나갈 때 시청 시간(2초 미만이면 건너뛰기도)
@@ -178,7 +183,7 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
     const io = new IntersectionObserver(
       ([e]) => {
         if (e.intersectionRatio > 0.7) {
-          v.currentTime = 0
+          v.currentTime = trimStart
           void v.play().catch(() => undefined)
           if (original.current) {
             original.current.currentTime = 0
@@ -273,11 +278,20 @@ function ReelItem({ post, muted, onToggleMute }: { post: PostView; muted: boolea
                 playsInline
                 preload="metadata"
                 onClick={onTap}
+                onLoadedMetadata={(e) => {
+                  if (trimStart > 0) e.currentTarget.currentTime = trimStart
+                }}
+                onTimeUpdate={(e) => {
+                  const v = e.currentTarget
+                  if (trimEnd !== null && v.currentTime >= trimEnd) v.currentTime = trimStart
+                  if (media?.overlays?.length) setTimeMs(v.currentTime * 1000)
+                }}
                 aria-label={`${post.author.username}님의 릴스`}
                 className={clsx('h-full object-cover', remixOf?.videoUrl ? 'w-1/2' : 'w-full')}
               />
             )}
           </div>
+          {media?.overlays?.length ? <OverlayLayer overlays={media.overlays} timeMs={timeMs} /> : null}
           {paused && (
             <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <Pause size={56} className="fill-white/80 text-white/80" />

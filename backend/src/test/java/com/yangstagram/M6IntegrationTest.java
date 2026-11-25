@@ -877,4 +877,108 @@ class M6IntegrationTest {
                 .session(me).with(csrf())).andReturn().getResponse().getContentAsString(), "$.shortcode");
         assertThat(grid(me, owner).getFirst()).isEqualTo(fresh);
     }
+
+    // ------------------------------------------------------------ ⑥ 릴스 자르기·자막, 부메랑, 홍보하기, 라이브 게스트
+
+    private org.springframework.test.web.servlet.ResultActions postJson(String url, MockHttpSession s, String body) throws Exception {
+        return mvc.perform(post(url).session(s).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    @Test
+    void 릴스_자르기와_자막은_영상_길이_안에서만_저장된다() throws Exception {
+        MockHttpSession s = loginAs(adult());
+        MockMultipartFile video = new MockMultipartFile("video", "v.mp4", "video/mp4", new byte[] {0, 0, 0, 24, 102, 116});
+        MockMultipartFile poster = new MockMultipartFile("poster", "p.png", "image/png", png(360, 640));
+        String ok = reel(s, "{\"durationMs\":10000,\"trimStartMs\":2000,\"trimEndMs\":8000,"
+                + "\"overlays\":[{\"text\":\"오늘의 브이로그\",\"startMs\":2000,\"endMs\":5000,\"y\":0.2}]}");
+        assertThat((Integer) JsonPath.read(ok, "$.media[0].trimStartMs")).isEqualTo(2000);
+        assertThat((Integer) JsonPath.read(ok, "$.media[0].trimEndMs")).isEqualTo(8000);
+        assertThat((String) JsonPath.read(ok, "$.media[0].overlays[0].text")).isEqualTo("오늘의 브이로그");
+        mvc.perform(multipart("/api/reels").file(video).file(poster)
+                        .file(json("data", "{\"durationMs\":10000,\"trimStartMs\":9500}")).session(s).with(csrf()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_TRIM"));
+        mvc.perform(multipart("/api/reels").file(video).file(poster).file(json("data",
+                        "{\"durationMs\":10000,\"overlays\":[{\"text\":\"너무 김\",\"startMs\":0,\"endMs\":12000,\"y\":0.5}]}"))
+                        .session(s).with(csrf()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_OVERLAY"));
+    }
+
+    @Test
+    void 부메랑_효과를_켠_스토리는_효과가_남는다() throws Exception {
+        MockHttpSession s = loginAs(adult());
+        mvc.perform(multipart("/api/stories").file(new MockMultipartFile("file", "s.png", "image/png", png(540, 960)))
+                        .file(json("data", "{\"effect\":\"BOOMERANG\"}")).session(s).with(csrf()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.effect").value("BOOMERANG"));
+        mvc.perform(multipart("/api/stories").file(new MockMultipartFile("file", "s.png", "image/png", png(540, 960)))
+                        .file(json("data", "{\"effect\":\"MAGIC\"}")).session(s).with(csrf()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.effect").isEmpty());
+    }
+
+    @Test
+    void 홍보하기는_프로페셔널_계정만_되고_팔로우하지_않는_사람의_피드에_광고로_나온다() throws Exception {
+        // 광고 자리를 이 게시물만 차지하도록 다른 광고는 끈다
+        jdbc.update("update ads set active = false");
+        String pro = jdbc.queryForObject("""
+                select u.username from users u where u.account_type <> 'PERSONAL' and not u.is_private
+                  and exists (select 1 from posts p where p.author_id = u.id and p.type <> 'REEL' and p.deleted_at is null)
+                order by u.id limit 1""", String.class);
+        String code = postOf(pro);
+        MockHttpSession me = loginAs(pro);
+        String personal = jdbc.queryForObject("""
+                select u.username from users u where u.account_type = 'PERSONAL'
+                  and exists (select 1 from posts p where p.author_id = u.id and p.deleted_at is null) order by u.id limit 1""",
+                String.class);
+        postJson("/api/posts/" + postOf(personal) + "/promotion", loginAs(personal), "{}")
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PRO_ONLY"));
+        postJson("/api/posts/" + code + "/promotion", me, "{\"dailyBudget\":1000}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_BUDGET"));
+        postJson("/api/posts/" + code + "/promotion", me, "{\"dailyBudget\":20000,\"days\":5,\"cta\":\"예약하기\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.budget").value(100000)).andExpect(jsonPath("$.cta").value("예약하기"));
+
+        String viewer = jdbc.queryForObject("""
+                select u.username from users u, users p where p.username = ? and u.id <> p.id
+                  and u.birth_date < current_date - interval '18 years' and u.following_count >= 5
+                  and not exists (select 1 from follows f where f.follower_id = u.id and f.following_id = p.id)
+                order by u.following_count desc, u.id limit 1""", String.class, pro);
+        String feed = mvc.perform(get("/api/feed").session(loginAs(viewer))).andReturn().getResponse().getContentAsString();
+        List<String> ads = JsonPath.read(feed, "$.items[?(@.ad != null)].shortcode");
+        assertThat(ads).contains(code);
+
+        postJson("/api/events", loginAs(viewer), "{\"events\":[{\"type\":\"IMPRESSION\",\"shortcode\":\"" + code
+                + "\",\"surface\":\"AD\"}]}").andExpect(status().isOk());
+        mvc.perform(get("/api/posts/" + code + "/promotion").session(me))
+                .andExpect(jsonPath("$.impressions").value(1)).andExpect(jsonPath("$.spent").value(5));
+        mvc.perform(delete("/api/posts/" + code + "/promotion").session(me).with(csrf()))
+                .andExpect(jsonPath("$.active").value(false));
+        String after = mvc.perform(get("/api/feed").session(loginAs(viewer))).andReturn().getResponse().getContentAsString();
+        assertThat((List<String>) JsonPath.read(after, "$.items[?(@.ad != null)].shortcode")).doesNotContain(code);
+    }
+
+    @Test
+    void 라이브_게스트는_보고_있는_사람만_초대하고_수락하면_모두에게_게스트로_보인다() throws Exception {
+        List<String> u = jdbc.queryForList("""
+                select username from users where birth_date < current_date - interval '18 years' and not is_private
+                order by id limit 3""", String.class);
+        MockHttpSession host = loginAs(u.get(0));
+        MockHttpSession guest = loginAs(u.get(1));
+        MockHttpSession other = loginAs(u.get(2));
+        int liveId = JsonPath.read(postJson("/api/lives", host, "{\"title\":\"게스트 시험\"}")
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        postJson("/api/lives/" + liveId + "/guest", host, "{\"username\":\"" + u.get(1) + "\"}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("NOT_WATCHING"));
+        mvc.perform(post("/api/lives/" + liveId + "/join").session(guest).with(csrf())).andExpect(status().isOk());
+        mvc.perform(post("/api/lives/" + liveId + "/join").session(other).with(csrf())).andExpect(status().isOk());
+        postJson("/api/lives/" + liveId + "/guest", other, "{\"username\":\"" + u.get(1) + "\"}")
+                .andExpect(status().isForbidden());
+        postJson("/api/lives/" + liveId + "/guest", host, "{\"username\":\"" + u.get(1) + "\"}")
+                .andExpect(jsonPath("$.guestStatus").value("INVITED")).andExpect(jsonPath("$.guest.username").value(u.get(1)));
+        mvc.perform(post("/api/lives/" + liveId + "/guest/accept").session(other).with(csrf())).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/lives/" + liveId + "/guest/accept").session(guest).with(csrf()))
+                .andExpect(jsonPath("$.guestStatus").value("JOINED"));
+        mvc.perform(get("/api/lives/" + liveId).session(other)).andExpect(jsonPath("$.guest.username").value(u.get(1)));
+        mvc.perform(post("/api/lives/" + liveId + "/guest/remove").session(host).with(csrf()))
+                .andExpect(jsonPath("$.guest").isEmpty());
+        mvc.perform(post("/api/lives/" + liveId + "/end").session(host).with(csrf())).andExpect(status().isOk());
+    }
 }

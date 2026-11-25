@@ -42,7 +42,7 @@ export const storyApi = {
   respond: (id: number, stickerId: string, value: string) =>
     api.post<StoryView>(`/api/stories/${id}/stickers/${stickerId}`, { value }),
   /** 사진(글자는 이미 그려 넣음) + 공개 범위 + 스티커 */
-  create: (file: Blob, data: { altText?: string; audience: 'PUBLIC' | 'CLOSE_FRIENDS'; stickers: Omit<Sticker, 'id'>[]; audioId?: number | null }) => {
+  create: (file: Blob, data: { altText?: string; audience: 'PUBLIC' | 'CLOSE_FRIENDS'; stickers: Omit<Sticker, 'id'>[]; audioId?: number | null; effect?: 'BOOMERANG' | null }) => {
     const form = new FormData()
     form.append('file', file, 'story.jpg')
     form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))

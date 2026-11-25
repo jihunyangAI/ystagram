@@ -22,6 +22,9 @@ export interface LiveView {
   commentCount: number
   badgeCount: number
   mine: boolean
+  /** 게스트 (⚪ 흉내: 영상 없이 자리만) */
+  guest: UserSummary | null
+  guestStatus: 'INVITED' | 'JOINED' | null
 }
 
 export interface LiveComment {

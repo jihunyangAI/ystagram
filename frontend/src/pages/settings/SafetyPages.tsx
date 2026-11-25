@@ -10,6 +10,7 @@ import { Modal } from '../../components/Modal'
 import { toast } from '../../components/Toast'
 import { timeAgo } from '../../lib/format'
 import { Avatar } from '../../components/Avatar'
+import { browserNotifyEnabled, setBrowserNotify } from '../../lib/browserNotify'
 
 export interface UserSettings {
   hideOffensive: boolean
@@ -179,6 +180,7 @@ export function NotificationSettingsPage() {
     save.mutate({ notifOff: on ? data.notifOff.filter((x) => x !== g) : [...data.notifOff, g] })
   return (
     <Page title="알림">
+      <BrowserNotifyToggle />
       <div className="rounded-lg border border-border p-3">
         <p className="flex items-center gap-2 text-sm font-semibold">
           <BellOff size={18} /> 모두 일시 중지
@@ -212,6 +214,26 @@ export function NotificationSettingsPage() {
       </div>
       <p className="text-xs text-muted">끈 종류의 알림은 활동 화면에도 남지 않습니다.</p>
     </Page>
+  )
+}
+
+/** 이 기기의 브라우저 알림 (탭이 안 보일 때 알림 창) */
+function BrowserNotifyToggle() {
+  const [on, setOn] = useState(browserNotifyEnabled())
+  const supported = typeof Notification !== 'undefined'
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <Toggle
+        checked={on}
+        onChange={async (v) => {
+          const r = await setBrowserNotify(v)
+          setOn(r)
+          if (v && !r) toast(supported ? '브라우저에서 알림을 허용해야 켤 수 있습니다' : '이 브라우저는 알림을 지원하지 않습니다')
+        }}
+        label="브라우저 알림 (이 기기)"
+        help="이 탭이 뒤에 있을 때 새 알림·메시지를 브라우저 알림 창으로 알려 줍니다 (연구용: 푸시 서버 없이 탭이 열려 있을 때만)"
+      />
+    </div>
   )
 }
 

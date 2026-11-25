@@ -89,6 +89,19 @@ export interface MediaView {
   altText: string | null
   type: 'IMAGE' | 'VIDEO'
   durationMs: number | null
+  /** 릴스 자르기: 이 구간만 재생 (영상은 그대로) */
+  trimStartMs: number | null
+  trimEndMs: number | null
+  /** 릴스 자막·글자 */
+  overlays: Overlay[]
+}
+
+export interface Overlay {
+  text: string
+  startMs: number
+  endMs: number
+  /** 화면 세로 위치 0~1 */
+  y: number
 }
 
 export interface TagView {
@@ -644,6 +657,8 @@ export interface StoryView {
   stickers: Sticker[]
   results: StickerResult[]
   audio: AudioRef | null
+  /** BOOMERANG: 보는 화면에서 앞뒤로 움직임 */
+  effect: 'BOOMERANG' | null
 }
 
 export type StickerType = 'POLL' | 'QUIZ' | 'SLIDER' | 'QUESTION' | 'MENTION' | 'HASHTAG' | 'LOCATION' | 'LINK' | 'COUNTDOWN'

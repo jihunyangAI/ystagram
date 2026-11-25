@@ -212,7 +212,7 @@ test('6. 스토리를 올리고 +25시간 → 트레이에서 사라지고 아�
   const before = new Set(await archived())
 
   await loginAs(page, A, '/create/story')
-  await page.locator('input[type="file"]').setInputFiles(solidPng('story.png', [250, 170, 40], 270, 480))
+  await page.locator('input[type="file"]:not([multiple])').setInputFiles(solidPng('story.png', [250, 170, 40], 270, 480))
   await page.getByRole('button', { name: '공유', exact: true }).click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('button', { name: '내 스토리 보기' })).toBeVisible()

@@ -21,6 +21,8 @@ export interface RealtimeEvent {
     | 'live:heart'
     | 'live:viewers'
     | 'live:end'
+    | 'live:guest'
+    | 'live:guest-invite'
     | 'call:incoming'
     | 'call:accepted'
     | 'call:ended'

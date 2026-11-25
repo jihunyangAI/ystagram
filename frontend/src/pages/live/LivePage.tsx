@@ -11,6 +11,7 @@ import { useMe } from '../../lib/auth'
 import { formatCount } from '../../lib/format'
 import { BADGE_PRICES, hostMedia, type LiveComment, type LiveView } from '../../lib/live'
 import { useRealtimeEvent } from '../../lib/realtime'
+import { LiveGuestLayer } from './LiveGuest'
 import {
   acceptAnswer,
   getLocalMedia,
@@ -453,6 +454,8 @@ export function LiveRoomPage() {
             카메라 대신 테스트 화면으로 방송 중
           </p>
         )}
+
+        <LiveGuestLayer live={live} hosting={hosting} meId={me?.user.id} comments={comments} onChange={setLive} />
 
         {/* 날아가는 하트 */}
         <div className="pointer-events-none absolute right-4 bottom-20 z-10 h-0 w-10">

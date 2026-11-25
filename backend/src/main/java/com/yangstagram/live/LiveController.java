@@ -92,4 +92,19 @@ public class LiveController {
     public LiveComment badge(@PathVariable long id, @RequestBody BadgeRequest body) {
         return lives.badge(id, CurrentUser.requireId(), body.tier());
     }
+
+    public record GuestRequest(String username) {
+    }
+
+    /** 게스트 초대 (진행자, 지금 보고 있는 사람) */
+    @PostMapping("/{id}/guest")
+    public LiveService.LiveView inviteGuest(@PathVariable long id, @RequestBody GuestRequest body) {
+        return lives.inviteGuest(id, CurrentUser.requireId(), body.username());
+    }
+
+    /** 초대 수락(accept) 또는 내보내기(remove) */
+    @PostMapping("/{id}/guest/{action}")
+    public LiveService.LiveView answerGuest(@PathVariable long id, @PathVariable String action) {
+        return lives.answerGuest(id, CurrentUser.requireId(), action);
+    }
 }

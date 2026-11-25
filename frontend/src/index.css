@@ -237,6 +237,15 @@ body {
   font-size: 10px;
 }
 
+/* 스토리 부메랑 (🟡 흉내): 사진이 앞뒤로 살짝 움직였다 돌아온다 */
+@keyframes boomerang {
+  0% { transform: scale(1) translateX(0); }
+  50% { transform: scale(1.08) translateX(-2%); }
+  100% { transform: scale(1) translateX(0); }
+}
+.boomerang { animation: boomerang 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .boomerang { animation: none; } }
+
 /* 라이브: 날아가는 하트 */
 @keyframes live-heart {
   0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
