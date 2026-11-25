@@ -71,6 +71,9 @@ export function LoginPage() {
           {login.isPending ? '로그인 중…' : '로그인'}
         </button>
         {login.isError && <p className="pt-2 text-center text-sm text-danger">{login.error.message}</p>}
+        <Link to="/accounts/password/reset" className="block pt-2 text-center text-xs text-primary">
+          비밀번호를 잊으셨나요?
+        </Link>
       </form>
 
       <div className="my-6 flex items-center gap-4 text-xs font-semibold text-muted">

@@ -52,7 +52,7 @@ class AuthAndLabIntegrationTest {
         MockHttpSession session = new MockHttpSession();
         mvc.perform(post("/api/auth/signup").session(session).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(signupJson("New.User", "New@Example.com", "1995-05-05")))
+                        .content(SignupCodes.with(mvc, jdbc, signupJson("New.User", "New@Example.com", "1995-05-05"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.user.username").value("new.user"))   // 소문자로 정규화
                 .andExpect(jsonPath("$.email").value("new@example.com"))

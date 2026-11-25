@@ -481,7 +481,7 @@ public class PostQueries {
                          row_number() over (partition by c.post_id order by c.created_at desc, c.id desc) as rn
                   from comments c join users u on u.id = c.author_id
                   where c.post_id in (:ids) and c.parent_id is null and u.deleted_at is null
-                    and (not c.restricted or c.author_id = :me) and %s
+                    and (not c.restricted or c.author_id = :me) and (not c.hidden or c.author_id = :me) and %s
                 ) t where rn <= 2
                 order by post_id, created_at, id
                 """.formatted(UserRows.cols("u"), RelationSql.notBlocked("u.id")), p, rs -> {
@@ -524,6 +524,27 @@ public class PostQueries {
                 from posts p join audio_tracks t on t.id = p.audio_id where p.id in (:ids)
                 """, p, rs -> {
             audios.put(rs.getLong("pid"), com.yangstagram.audio.AudioService.read(rs, ""));
+        });
+        // 댓글 허용 범위 (게시물 주인의 설정 + 서로 팔로우 관계)
+        Map<Long, Boolean> canComment = new HashMap<>();
+        jdbc.query("""
+                select p.id, p.author_id, coalesce(s.comment_audience, 'EVERYONE') as aud,
+                       exists (select 1 from follows f where f.follower_id = p.author_id and f.following_id = :me
+                               and f.status = 'ACCEPTED') as owner_follows_me,
+                       exists (select 1 from follows f where f.follower_id = :me and f.following_id = p.author_id
+                               and f.status = 'ACCEPTED') as i_follow
+                from posts p left join user_settings s on s.user_id = p.author_id where p.id in (:ids)
+                """, p, rs -> {
+            boolean ownerFollows = rs.getBoolean("owner_follows_me");
+            boolean iFollow = rs.getBoolean("i_follow");
+            boolean ok = rs.getLong("author_id") == viewerId || switch (rs.getString("aud")) {
+                case "OFF" -> false;
+                case "FOLLOWING" -> ownerFollows;
+                case "FOLLOWERS" -> iFollow;
+                case "BOTH" -> ownerFollows || iFollow;
+                default -> true;
+            };
+            canComment.put(rs.getLong("id"), ok);
         });
         Map<Long, boolean[]> states = new HashMap<>();
         jdbc.query("select id, archived_at is not null, pinned_at is not null from posts where id in (:ids)", p, rs -> {
@@ -581,7 +602,7 @@ public class PostQueries {
                     products.getOrDefault(id, List.of()), exclusive.getOrDefault(id, false),
                     mine ? gifts.getOrDefault(id, 0L) : null,
                     mine && states.getOrDefault(id, new boolean[2])[0], mine && states.getOrDefault(id, new boolean[2])[1],
-                    audios.get(id)));
+                    audios.get(id), canComment.getOrDefault(id, true)));
         }
         return result;
     }

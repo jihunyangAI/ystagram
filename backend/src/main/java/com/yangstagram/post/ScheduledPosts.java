@@ -58,14 +58,25 @@ public class ScheduledPosts {
     }
 
     public ScheduledView schedule(long authorId, List<MultipartFile> files, CreatePostRequest req) {
+        return save(authorId, files, req, false);
+    }
+
+    /** 임시 저장: 시각 없이 보관했다가 나중에 "지금 게시" (예약과 같은 표, draft = true) */
+    public ScheduledView draft(long authorId, List<MultipartFile> files, CreatePostRequest req) {
+        return save(authorId, files, req, true);
+    }
+
+    private ScheduledView save(long authorId, List<MultipartFile> files, CreatePostRequest req, boolean draft) {
         Instant now = Instant.now(clock);
-        Instant at = req.scheduledAt();
-        if (at == null) throw ApiException.badRequest("NO_TIME", "예약 시각을 골라 주세요.");
-        if (at.isBefore(now.plus(MIN_AHEAD))) {
-            throw ApiException.badRequest("TOO_SOON", "예약은 지금부터 10분 뒤 이후로만 할 수 있습니다.");
-        }
-        if (at.isAfter(now.plus(MAX_AHEAD))) {
-            throw ApiException.badRequest("TOO_LATE", "예약은 75일 안으로만 할 수 있습니다.");
+        Instant at = draft ? null : req.scheduledAt();
+        if (!draft) {
+            if (at == null) throw ApiException.badRequest("NO_TIME", "예약 시각을 골라 주세요.");
+            if (at.isBefore(now.plus(MIN_AHEAD))) {
+                throw ApiException.badRequest("TOO_SOON", "예약은 지금부터 10분 뒤 이후로만 할 수 있습니다.");
+            }
+            if (at.isAfter(now.plus(MAX_AHEAD))) {
+                throw ApiException.badRequest("TOO_LATE", "예약은 75일 안으로만 할 수 있습니다.");
+            }
         }
         Integer pending = jdbc.queryForObject("""
                 select count(*) from scheduled_posts where author_id = :a and published_at is null and failure is null
@@ -80,25 +91,31 @@ public class ScheduledPosts {
         String caption = req.caption() == null ? null : req.caption().strip();
         Long id = jdbc.queryForObject("""
                 insert into scheduled_posts (author_id, payload, thumb_url, caption_start, media_count, scheduled_at,
-                                             created_at)
-                values (:a, cast(:payload as jsonb), :thumb, :cap, :n, :at, :now) returning id
+                                             created_at, draft)
+                values (:a, cast(:payload as jsonb), :thumb, :cap, :n, :at, :now, :draft) returning id
                 """, new MapSqlParameterSource("a", authorId)
                 .addValue("payload", json.writeValueAsString(new Payload(stored, images)))
                 .addValue("thumb", images.getFirst().thumbUrl())
                 .addValue("cap", caption == null || caption.isEmpty() ? null
                         : caption.substring(0, Math.min(60, caption.length())))
-                .addValue("n", images.size()).addValue("at", Timestamp.from(at))
+                .addValue("n", images.size()).addValue("at", at == null ? null : Timestamp.from(at)).addValue("draft", draft)
                 .addValue("now", Timestamp.from(now)), Long.class);
         return get(id, authorId);
     }
 
     public List<ScheduledView> list(long authorId) {
         return jdbc.query(SELECT + """
-                 where s.author_id = :a and (s.published_at is null
+                 where s.author_id = :a and not s.draft and (s.published_at is null
                        or s.published_at > cast(:now as timestamptz) - interval '7 days')
                  order by s.published_at is not null, s.scheduled_at
                 """, new MapSqlParameterSource("a", authorId).addValue("now", Timestamp.from(Instant.now(clock))),
                 (rs, i) -> read(rs));
+    }
+
+    /** 임시 저장한 게시물 (최근 저장순) */
+    public List<ScheduledView> drafts(long authorId) {
+        return jdbc.query(SELECT + " where s.author_id = :a and s.draft and s.published_at is null order by s.created_at desc",
+                Map.of("a", authorId), (rs, i) -> read(rs));
     }
 
     private static final String SELECT = """
@@ -111,7 +128,8 @@ public class ScheduledPosts {
         String status = rs.getString("failure") != null ? "FAILED"
                 : rs.getTimestamp("published_at") != null ? "PUBLISHED" : "PENDING";
         return new ScheduledView(rs.getLong("id"), rs.getString("thumb_url"), rs.getString("caption_start"),
-                rs.getInt("media_count"), rs.getTimestamp("scheduled_at").toInstant(),
+                rs.getInt("media_count"),
+                rs.getTimestamp("scheduled_at") == null ? null : rs.getTimestamp("scheduled_at").toInstant(),
                 rs.getTimestamp("created_at").toInstant(), status, rs.getString("shortcode"),
                 rs.getString("failure"));
     }
@@ -129,7 +147,7 @@ public class ScheduledPosts {
             throw ApiException.badRequest("BAD_TIME", "예약 시각은 10분 뒤부터 75일 안으로 골라 주세요.");
         }
         int n = jdbc.update("""
-                update scheduled_posts set scheduled_at = :at
+                update scheduled_posts set scheduled_at = :at, draft = false
                 where id = :id and author_id = :a and published_at is null and failure is null
                 """, new MapSqlParameterSource("id", id).addValue("a", authorId).addValue("at", Timestamp.from(at)));
         if (n == 0) throw ApiException.notFound("대기 중인 예약 게시물을 찾을 수 없습니다.");

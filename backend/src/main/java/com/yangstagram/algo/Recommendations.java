@@ -53,6 +53,8 @@ public class Recommendations {
             and %4$s
             and p.author_id not in %1$s
             and not exists (select 1 from reposts r where r.post_id = p.id and r.user_id in %1$s)
+            -- 광고로 돌고 있는 게시물은 광고 자리에서만 (같은 글이 두 번 보이지 않게)
+            and not exists (select 1 from ads ad where ad.post_id = p.id and ad.active)
             and %2$s and %3$s
             """.formatted(FOLLOWEES, RelationSql.notBlocked("a.id"), RelationSql.postsNotMuted("a.id"),
             PostQueries.NOT_SUSPENDED);
@@ -70,6 +72,7 @@ public class Recommendations {
             and (p.recommendable or a.id in %s)
             """.formatted(PostQueries.VISIBLE, FOLLOWEES);
 
+    private final com.yangstagram.settings.SettingsService userSettings;
     private final Ranker ranker;
     private final AlgorithmSettings settings;
     private final InterestService interests;
@@ -80,7 +83,8 @@ public class Recommendations {
     private final AdService ads;
 
     public Recommendations(Ranker ranker, AlgorithmSettings settings, InterestService interests, PostQueries queries,
-                           FeatureFlags flags, NamedParameterJdbcTemplate jdbc, LabClock clock, AdService ads) {
+                           FeatureFlags flags, NamedParameterJdbcTemplate jdbc, LabClock clock, AdService ads, com.yangstagram.settings.SettingsService userSettings) {
+        this.userSettings = userSettings;
         this.ads = ads;
         this.ranker = ranker;
         this.settings = settings;
@@ -106,7 +110,7 @@ public class Recommendations {
         Instant now = Instant.now(clock);
         Instant since = sinceMs == null ? now : Instant.ofEpochMilli(sinceMs);
         Map<Component, Double> w = settings.weights(Surface.EXPLORE);
-        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, ai(EXPLORE),
+        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, ai(EXPLORE) + userSettings.sensitiveFilter(me, "EXPLORE"),
                 new MapSqlParameterSource(), EXPLORE_PAGE + 1, p * EXPLORE_PAGE));
         Integer next = scored.size() > EXPLORE_PAGE ? p + 1 : null;
         List<Scored> pageItems = scored.subList(0, Math.min(EXPLORE_PAGE, scored.size()));
@@ -127,7 +131,7 @@ public class Recommendations {
         Instant now = Instant.now(clock);
         Instant since = sinceMs == null ? now : Instant.ofEpochMilli(sinceMs);
         Map<Component, Double> w = settings.weights(Surface.REELS);
-        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, ai(REELS),
+        List<Scored> scored = ranker.rank(new Request(me, w, interests.effective(me), now, since, ai(REELS) + userSettings.sensitiveFilter(me, "REELS"),
                 new MapSqlParameterSource(), REELS_PAGE + 1, p * REELS_PAGE));
         Integer next = scored.size() > REELS_PAGE ? p + 1 : null;
         List<Scored> pageItems = scored.subList(0, Math.min(REELS_PAGE, scored.size()));
@@ -251,7 +255,7 @@ public class Recommendations {
 
         int need = moreFollowing ? k : FEED_PAGE - following.size();
         List<Scored> suggested = need == 0 ? List.of() : ranker.rank(new Request(me, w, topics, now, since,
-                ai(HOME_SUGGESTED), new MapSqlParameterSource(), need + 1, sOff));
+                ai(HOME_SUGGESTED) + userSettings.sensitiveFilter(me, "FEED"), new MapSqlParameterSource(), need + 1, sOff));
         boolean moreSuggested = suggested.size() > need;
         if (moreSuggested) suggested = suggested.subList(0, need);
 

@@ -41,6 +41,15 @@ import { CreateStoryPage } from './pages/story/CreateStoryPage'
 import { StoryArchivePage } from './pages/story/StoryArchivePage'
 import { PostArchivePage, RecentlyDeletedPage } from './pages/post/PostArchivePages'
 import { AudioPage } from './pages/reels/AudioPage'
+import { LoginActivityPage, PasswordResetPage, RemoveAccountPage } from './pages/settings/AccountCenterPages'
+import {
+  CommentControlsPage,
+  DraftsPage,
+  HiddenWordsPage,
+  NotificationSettingsPage,
+  SensitiveContentPage,
+  TimeManagementPage,
+} from './pages/settings/SafetyPages'
 import { StoryViewerPage } from './pages/story/StoryViewerPage'
 
 export default function App() {
@@ -49,6 +58,7 @@ export default function App() {
       <Routes>
         <Route path="/accounts/login" element={<LoginPage />} />
         <Route path="/accounts/signup" element={<SignupPage />} />
+        <Route path="/accounts/password/reset" element={<PasswordResetPage />} />
 
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
@@ -72,6 +82,14 @@ export default function App() {
           <Route path="archive/stories" element={<StoryArchivePage />} />
           <Route path="archive/posts" element={<PostArchivePage />} />
           <Route path="audio/:id" element={<AudioPage />} />
+          <Route path="accounts/login-activity" element={<LoginActivityPage />} />
+          <Route path="accounts/remove" element={<RemoveAccountPage />} />
+          <Route path="accounts/hidden-words" element={<HiddenWordsPage />} />
+          <Route path="accounts/comments" element={<CommentControlsPage />} />
+          <Route path="accounts/notifications" element={<NotificationSettingsPage />} />
+          <Route path="accounts/sensitive" element={<SensitiveContentPage />} />
+          <Route path="accounts/time" element={<TimeManagementPage />} />
+          <Route path="accounts/drafts" element={<DraftsPage />} />
           <Route path="accounts/recently-deleted" element={<RecentlyDeletedPage />} />
           <Route path="create" element={<CreatePostPage />} />
           <Route path="create/story" element={<CreateStoryPage />} />

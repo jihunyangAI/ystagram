@@ -84,6 +84,19 @@ public class PostController {
         return scheduled.schedule(CurrentUser.requireId(), files, data);
     }
 
+    /** 임시 저장: 만들기와 같은 multipart (시각 없음) */
+    @PostMapping(value = "/posts/drafts", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ScheduledPosts.ScheduledView draft(@RequestPart(value = "files", required = false) List<MultipartFile> files,
+                                              @RequestPart("data") CreatePostRequest data) {
+        return scheduled.draft(CurrentUser.requireId(), files, data);
+    }
+
+    @GetMapping("/me/drafts")
+    public List<ScheduledPosts.ScheduledView> drafts() {
+        return scheduled.drafts(CurrentUser.requireId());
+    }
+
     @GetMapping("/me/scheduled")
     public List<ScheduledPosts.ScheduledView> scheduledList() {
         return scheduled.list(CurrentUser.requireId());
@@ -158,6 +171,12 @@ public class PostController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable String shortcode) {
         postService.delete(shortcode, CurrentUser.requireId());
+    }
+
+    /** 숨겨진 단어로 숨긴 댓글 (게시물 주인만) */
+    @GetMapping("/posts/{shortcode}/comments/hidden")
+    public List<com.yangstagram.post.dto.PostDtos.CommentView> hiddenComments(@PathVariable String shortcode) {
+        return commentService.hidden(shortcode, CurrentUser.requireId());
     }
 
     @PostMapping("/posts/{shortcode}/restore")

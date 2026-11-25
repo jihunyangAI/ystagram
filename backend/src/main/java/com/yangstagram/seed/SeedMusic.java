@@ -83,10 +83,26 @@ final class SeedMusic {
                 update posts p set audio_id = t.id from audio_tracks t
                 where t.origin_post_id = p.id and p.audio_id is null
                 """);
-        // 리믹스는 원본 릴스의 소리
+        // 리믹스는 원본 릴스의 소리 (리믹스의 리믹스도 있어서 더 바뀌지 않을 때까지)
+        for (int i = 0; i < 10; i++) {
+            int n = jdbc.update("""
+                    update posts r set audio_id = o.audio_id from posts o
+                    where r.remix_of_id = o.id and r.audio_id is null and o.audio_id is not null
+                    """);
+            if (n == 0) break;
+        }
+        // 그래도 남은 릴스(원본이 지워진 리믹스 등)는 자기 원본 오디오
+        originals += jdbc.update("""
+                insert into audio_tracks (title, artist, bpm, seed, duration_ms, origin_post_id, origin_user_id, created_at)
+                select '원본 오디오', u.username, 80 + (p.id * 37 % 60)::int, (p.id * 2654435761 % 100000)::int,
+                       least(coalesce(m.duration_ms, 15000), 60000), p.id, u.id, p.created_at
+                from posts p join users u on u.id = p.author_id
+                left join post_media m on m.post_id = p.id and m.position = 0
+                where p.type = 'REEL' and p.audio_id is null
+                """);
         jdbc.update("""
-                update posts r set audio_id = o.audio_id from posts o
-                where r.remix_of_id = o.id and r.audio_id is null
+                update posts p set audio_id = t.id from audio_tracks t
+                where t.origin_post_id = p.id and p.audio_id is null
                 """);
         return library.size() + originals;
     }

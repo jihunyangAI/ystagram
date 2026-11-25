@@ -163,7 +163,7 @@ export function CreatePostPage() {
   const tooManyTags = countHashtags(caption) > hashtagLimit
   const tooLong = caption.length > MAX_CAPTION
 
-  const share = async () => {
+  const share = async (draft = false) => {
     if (tooManyTags || tooLong) return
     setSharing(true)
     try {
@@ -186,6 +186,13 @@ export function CreatePostPage() {
         scheduledAt: scheduleOn ? new Date(fromLocalInput(scheduleAt)).toISOString() : null,
       }
       form.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+      if (draft) {
+        await api.upload<ScheduledPost>('POST', '/api/posts/drafts', form)
+        qc.invalidateQueries({ queryKey: ['drafts'] })
+        toast('임시 저장했습니다. 설정 → 임시 저장에서 게시할 수 있어요')
+        navigate('/accounts/drafts')
+        return
+      }
       if (scheduleOn) {
         const s = await api.upload<ScheduledPost>('POST', '/api/posts/scheduled', form)
         qc.invalidateQueries({ queryKey: ['scheduled'] })
@@ -225,7 +232,7 @@ export function CreatePostPage() {
       <button
         className="font-semibold text-primary hover:text-text disabled:opacity-40"
         disabled={sharing || tooManyTags || tooLong}
-        onClick={share}
+        onClick={() => share()}
       >
         {sharing ? (scheduleOn ? '예약 중…' : '공유 중…') : scheduleOn ? '예약하기' : '공유하기'}
       </button>
@@ -314,6 +321,16 @@ export function CreatePostPage() {
               <CaptionField value={caption} onChange={setCaption} autoFocus />
               <LocationField value={location} onChange={setLocation} />
               <MusicField value={audio} onChange={setAudio} />
+              {!scheduleOn && (
+                <button
+                  type="button"
+                  className="border-t border-border pt-4 text-left text-sm font-semibold text-primary disabled:opacity-40"
+                  disabled={sharing || tooManyTags || tooLong}
+                  onClick={() => share(true)}
+                >
+                  임시 저장
+                </button>
+              )}
               <section className="border-t border-border pt-4">
                 <h2 className="mb-2 text-sm font-semibold">사람 태그 ({tags.length}/20)</h2>
                 {pendingTag ? (

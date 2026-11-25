@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
+  Bell,
+  FileClock,
+  MessageCircle,
+  ShieldAlert,
+  Timer,
+  MonitorSmartphone,
+  UserX,
+  UsersRound,
   Archive,
   Trash2,
   Ban,
@@ -28,6 +36,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useLogout, useMe } from '../../lib/auth'
+import { AccountSwitcher } from './AccountCenterPages'
 import { getTheme, setTheme } from '../../lib/theme'
 import type { Theme } from '../../lib/theme'
 
@@ -78,6 +87,8 @@ export function SettingsPage() {
         { to: '/accounts/edit', label: '프로필 편집', icon: CircleUserRound },
         { to: '/accounts/edit#privacy', label: '계정 공개 범위', icon: Lock, hint: '비공개 계정·팔로우 요청' },
         { to: '/accounts/two-factor', label: '2단계 인증', icon: KeyRound, hint: '로그인할 때 인증 앱 코드도 확인' },
+        { to: '/accounts/login-activity', label: '로그인 활동', icon: MonitorSmartphone, hint: '로그인된 기기 보기·다른 곳에서 로그아웃' },
+        { to: '/accounts/remove', label: '계정 비활성화 또는 삭제', icon: UserX, hint: '잠시 쉬기, 또는 30일 뒤 영구 삭제' },
       ],
     },
     {
@@ -88,6 +99,8 @@ export function SettingsPage() {
         { to: '/accounts/recently-deleted', label: '최근 삭제됨', icon: Trash2, hint: '지운 게시물 30일 안에 복원' },
         { to: '/insights', label: '인사이트', icon: BarChart3, hint: '도달·노출·참여·팔로워 변화' },
         { to: '/accounts/scheduled', label: '예약된 콘텐츠', icon: CalendarClock, hint: '예약한 게시물 보기·지금 게시·취소' },
+        { to: '/accounts/drafts', label: '임시 저장', icon: FileClock, hint: '저장해 둔 게시물 게시·삭제' },
+        { to: '/accounts/time', label: '사용 시간 관리', icon: Timer, hint: '하루 사용 시간 알림·수면 모드' },
       ],
     },
     {
@@ -112,6 +125,9 @@ export function SettingsPage() {
       items: [
         { to: '/accounts/restricted', label: '제한된 계정', icon: MessageSquareOff, hint: '댓글은 승인해야 공개, DM은 요청함으로' },
         { to: '/accounts/muted', label: '숨긴 계정', icon: EyeOff, hint: '팔로우는 유지하고 피드·스토리에서만 빼기' },
+        { to: '/accounts/comments', label: '댓글', icon: MessageCircle, hint: '내 게시물에 댓글을 달 수 있는 사람' },
+        { to: '/accounts/hidden-words', label: '숨겨진 단어', icon: ShieldAlert, hint: '불쾌한 말이 들어간 댓글 숨기기' },
+        { to: '/accounts/notifications', label: '알림', icon: Bell, hint: '종류별로 끄기·모두 일시 중지' },
       ],
     },
     {
@@ -122,11 +138,13 @@ export function SettingsPage() {
       title: '표시되는 내용',
       items: [
         { to: '/accounts/algorithm', label: '회원님의 알고리즘', icon: Sparkles, hint: '추천에 쓰이는 관심 주제 보기·추가·빼기' },
+        { to: '/accounts/sensitive', label: '민감한 콘텐츠', icon: EyeOff, hint: '추천에서 민감할 수 있는 콘텐츠 덜 보기·더 보기' },
         { to: '/accounts/favorites', label: '즐겨찾기', icon: UserRoundCheck, hint: '홈의 "즐겨찾기"에 이 사람들의 글만' },
       ],
     },
   ]
 
+  const [switching, setSwitching] = useState(false)
   const choose = (t: Theme) => {
     setTheme(t)
     setThemeState(t)
@@ -181,6 +199,11 @@ export function SettingsPage() {
       </section>
 
       <section className="py-2">
+        <button className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-surface-2" onClick={() => setSwitching(true)}>
+          <UsersRound size={22} strokeWidth={1.7} />
+          <span className="text-sm">계정 전환·추가</span>
+        </button>
+        <AccountSwitcher open={switching} onClose={() => setSwitching(false)} />
         <Link to="/lab" className="flex items-center gap-4 px-4 py-3 hover:bg-surface-2">
           <FlaskConical size={22} strokeWidth={1.7} className="text-primary" />
           <span className="flex-1 text-sm">Lab (연구 도구)</span>

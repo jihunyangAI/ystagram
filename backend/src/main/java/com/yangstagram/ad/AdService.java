@@ -54,6 +54,9 @@ public class AdService {
                 join users adv on adv.id = ad.advertiser_id
                 where ad.active and p.deleted_at is null and p.archived_at is null and adv.deleted_at is null and adv.id <> :me
                   and ad.post_id not in (:exclude)
+                  -- 팔로우하는 계정의 글은 피드에 그냥 나오므로 광고로 다시 보여 주지 않는다
+                  and not exists (select 1 from follows f where f.follower_id = :me and f.following_id = adv.id
+                                  and f.status = 'ACCEPTED')
                   and not exists (select 1 from events h where h.user_id = :me and h.type = 'AD_HIDE'
                                   and h.post_id = ad.post_id)
                   and %s

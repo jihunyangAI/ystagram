@@ -96,7 +96,7 @@ export function PostCard({ post }: { post: PostView }) {
           ))}
         </div>
       )}
-      {!post.commentsDisabled && <CommentInput shortcode={post.shortcode} className="px-3 md:px-0" />}
+      {!post.commentsDisabled && post.extras.canComment && <CommentInput shortcode={post.shortcode} className="px-3 md:px-0" />}
 
       <PostMenu
         post={post}

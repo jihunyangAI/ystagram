@@ -33,6 +33,7 @@ public class AuthController {
     private final SessionLogin sessionLogin;
     private final TwoFactorService twoFactor;
     private final com.yangstagram.moderation.ModerationService moderation;
+    private final com.yangstagram.account.AccountService accounts;
 
     /** 비밀번호는 맞고 2단계 인증 코드를 기다리는 중 (세션에 5분, 틀리면 5번까지) */
     private static final String PENDING = "2fa.pendingUser";
@@ -41,7 +42,9 @@ public class AuthController {
 
     public AuthController(UserService userService, UserRepository userRepository,
                           AuthenticationManager authenticationManager, SessionLogin sessionLogin,
-                          TwoFactorService twoFactor, com.yangstagram.moderation.ModerationService moderation) {
+                          TwoFactorService twoFactor, com.yangstagram.moderation.ModerationService moderation,
+                          com.yangstagram.account.AccountService accounts) {
+        this.accounts = accounts;
         this.twoFactor = twoFactor;
         this.moderation = moderation;
         this.userService = userService;
@@ -59,8 +62,11 @@ public class AuthController {
     @PostMapping("/signup")
     public ResponseEntity<MeResponse> signUp(@Valid @RequestBody SignupRequest req,
                                              HttpServletRequest request, HttpServletResponse response) {
+        // 가입 인증 코드: 다른 검사를 먼저 하고(중복 이메일 등), 코드는 마지막에 확인한다
+        userService.validateSignup(req);
+        accounts.consumeCode("SIGNUP", req.email().strip().toLowerCase(), req.code());
         User user = userService.signUp(req);
-        sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response);
+        sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response, "SIGNUP");
         return ResponseEntity.status(HttpStatus.CREATED).body(MeResponse.from(user));
     }
 
@@ -75,6 +81,8 @@ public class AuthController {
     @PostMapping("/login")
     public Object login(@Valid @RequestBody LoginRequest req,
                         HttpServletRequest request, HttpServletResponse response) {
+        // 비활성화했거나 삭제를 요청한(30일 안) 계정은 맞는 비밀번호로 로그인하면 되살아난다
+        accounts.reactivateIfDormant(req.login(), req.password());
         Authentication auth = authenticationManager.authenticate(
                 UsernamePasswordAuthenticationToken.unauthenticated(req.login(), req.password()));
         AuthUser user = (AuthUser) auth.getPrincipal();
@@ -113,7 +121,7 @@ public class AuthController {
         }
         session.removeAttribute(PENDING);
         User user = userService.getActive(userId);
-        sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response);
+        sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response, "TWO_FACTOR");
         return MeResponse.from(user);
     }
 

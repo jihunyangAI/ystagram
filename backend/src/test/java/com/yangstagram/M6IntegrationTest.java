@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,6 +29,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
+import com.yangstagram.account.AccountService;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** M6: 기획서 §4에 있었지만 M0~M5에 빠졌던 기능 (보관·고정·최근 삭제됨 …) */
@@ -44,6 +46,12 @@ class M6IntegrationTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    AccountService accountService;
+
+    @Autowired
+    com.yangstagram.common.time.LabClock clock;
 
     @BeforeEach
     void resetData() {
@@ -177,6 +185,7 @@ class M6IntegrationTest {
         Map<String, Object> row = jdbc.queryForMap("""
                 select a.username as a, b.username as b from users a, users b
                 where a.id < b.id and not a.is_private and not b.is_private
+                  and a.birth_date < current_date - interval '18 years' and b.birth_date < current_date - interval '18 years'
                   and not exists (select 1 from follows f where f.follower_id = a.id and f.following_id = b.id)
                   and not exists (select 1 from follows f where f.follower_id = b.id and f.following_id = a.id)
                 order by a.id, b.id limit 1
@@ -427,5 +436,369 @@ class M6IntegrationTest {
                 .andReturn().getResponse().getContentAsString(), "$.items[*].shortcode");
         assertThat(hits).containsExactly(code);
         mvc.perform(get("/api/search/posts").param("q", "z").session(s)).andExpect(jsonPath("$.items").isEmpty());
+    }
+
+    // ------------------------------------------------------------ ④-a 계정 센터
+
+    private MockHttpSession passwordLogin(String login, String password) throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        mvc.perform(post("/api/auth/login").session(session).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"login\":\"" + login + "\",\"password\":\"" + password + "\"}"))
+                .andExpect(status().isOk());
+        return session;
+    }
+
+    private String plainUser() {
+        return jdbc.queryForObject("""
+                select username from users where is_fake and not totp_enabled and deleted_at is null
+                  and birth_date < current_date - interval '18 years' and not is_private order by id limit 1""",
+                String.class);
+    }
+
+    @Test
+    void 가입은_이메일로_받은_인증_코드가_있어야_하고_코드는_Lab에_보인다() throws Exception {
+        String data = "{\"email\":\"Code.Test@example.com\",\"fullName\":\"코드\",\"username\":\"code.test\","
+                + "\"password\":\"secret1\",\"birthDate\":\"1990-01-01\"";
+        mvc.perform(post("/api/auth/signup").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(data + "}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CODE_REQUIRED"));
+        mvc.perform(post("/api/auth/signup/code").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"Code.Test@example.com\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sentTo").value("code.test@example.com"));
+        String code = JsonPath.read(mvc.perform(get("/api/lab/codes")).andReturn().getResponse().getContentAsString(),
+                "$[0].code");
+        String wrong = code.equals("000000") ? "111111" : "000000";
+        mvc.perform(post("/api/auth/signup").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(data + ",\"code\":\"" + wrong + "\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_CODE"));
+        mvc.perform(post("/api/auth/signup").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(data + ",\"code\":\"" + code + "\"}"))
+                .andExpect(status().isCreated());
+        // 한 번 쓴 코드는 다시 못 쓰고, 이미 가입한 이메일은 코드를 받지 않는다
+        mvc.perform(post("/api/auth/signup/code").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"code.test@example.com\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EMAIL_TAKEN"));
+    }
+
+    @Test
+    void 비밀번호를_재설정하면_다른_곳의_로그인이_끊기고_새_비밀번호로만_들어간다() throws Exception {
+        String u = plainUser();
+        MockHttpSession elsewhere = passwordLogin(u, "yang1234");
+        mvc.perform(get("/api/me/profile").session(elsewhere)).andExpect(status().isOk());
+
+        mvc.perform(post("/api/auth/password/code").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"" + u + "\"}")).andExpect(status().isOk());
+        // 없는 계정도 같은 응답 (가입 여부를 흘리지 않음)
+        mvc.perform(post("/api/auth/password/code").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"login\":\"no.such.user.zz\"}")).andExpect(status().isOk());
+        String code = jdbc.queryForObject("""
+                select c.code from auth_codes c join users x on x.id::text = c.target
+                where c.purpose = 'RESET' and x.username = ? order by c.id desc limit 1""", String.class, u);
+        mvc.perform(post("/api/auth/password/reset").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"login\":\"" + u + "\",\"code\":\"" + code + "\",\"password\":\"newpass9\"}"))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/me/profile").session(elsewhere)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"login\":\"" + u + "\",\"password\":\"yang1234\"}"))
+                .andExpect(status().isUnauthorized());
+        passwordLogin(u, "newpass9");
+    }
+
+    @Test
+    void 로그인_활동에서_다른_기기를_로그아웃시킨다() throws Exception {
+        String u = plainUser();
+        MockHttpSession laptop = passwordLogin(u, "yang1234");
+        MockHttpSession phone = passwordLogin(u, "yang1234");
+        String list = mvc.perform(get("/api/me/sessions").session(laptop)).andReturn().getResponse().getContentAsString();
+        List<Boolean> current = JsonPath.read(list, "$[*].current");
+        assertThat(current).containsOnlyOnce(true);
+        List<Integer> others = JsonPath.read(list, "$[?(@.current == false)].id");
+        assertThat(others).isNotEmpty();
+
+        mvc.perform(delete("/api/me/sessions/" + others.getFirst()).session(laptop).with(csrf()))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/me/profile").session(phone)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/me/profile").session(laptop)).andExpect(status().isOk());
+
+        MockHttpSession tablet = passwordLogin(u, "yang1234");
+        mvc.perform(delete("/api/me/sessions").session(laptop).with(csrf())).andExpect(status().isOk());
+        mvc.perform(get("/api/me/profile").session(tablet)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/me/profile").session(laptop)).andExpect(status().isOk());
+        // 로그아웃하면 기록에서도 사라진다
+        mvc.perform(post("/api/auth/logout").session(laptop).with(csrf())).andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("""
+                select count(*) from login_sessions s join users x on x.id = s.user_id where x.username = ? and s.revoked_at is null
+                """, Integer.class, u)).isZero();
+    }
+
+    @Test
+    void 계정을_추가하면_비밀번호_없이_오간다() throws Exception {
+        List<String> two = jdbc.queryForList("""
+                select username from users where is_fake and not totp_enabled and deleted_at is null
+                  and birth_date < current_date - interval '18 years' order by id limit 2""", String.class);
+        MockHttpSession s = passwordLogin(two.get(0), "yang1234");
+        mvc.perform(post("/api/auth/accounts").session(s).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"login\":\"" + two.get(1) + "\",\"password\":\"wrong\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/accounts").session(s).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"login\":\"" + two.get(1) + "\",\"password\":\"yang1234\"}"))
+                .andExpect(jsonPath("$.user.username").value(two.get(1)));
+        String linked = mvc.perform(get("/api/auth/accounts").session(s)).andReturn().getResponse().getContentAsString();
+        assertThat((List<String>) JsonPath.read(linked, "$.accounts[*].username")).containsExactly(two.get(0), two.get(1));
+        int firstId = JsonPath.read(linked, "$.accounts[0].id");
+
+        mvc.perform(post("/api/auth/accounts/" + firstId + "/switch").session(s).with(csrf()))
+                .andExpect(jsonPath("$.user.username").value(two.get(0)));
+        mvc.perform(get("/api/auth/me").session(s)).andExpect(jsonPath("$.user.username").value(two.get(0)));
+        long stranger = jdbc.queryForObject("select id from users where username not in (?, ?) order by id limit 1",
+                Long.class, two.get(0), two.get(1));
+        mvc.perform(post("/api/auth/accounts/" + stranger + "/switch").session(s).with(csrf()))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("NOT_LINKED"));
+    }
+
+    @Test
+    void 비활성화는_다시_로그인하면_복구되고_삭제는_30일이_지나면_영구_삭제된다() throws Exception {
+        String u = plainUser();
+        MockHttpSession me = passwordLogin(u, "yang1234");
+        MockHttpSession other = loginAs(jdbc.queryForObject(
+                "select username from users where username <> ? and deleted_at is null order by id limit 1", String.class, u));
+        mvc.perform(post("/api/me/deactivate").session(me).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"password\":\"wrong\"}")).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/me/deactivate").session(me).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"password\":\"yang1234\"}")).andExpect(status().isNoContent());
+        mvc.perform(get("/api/me/profile").session(me)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/users/" + u).session(other)).andExpect(status().isNotFound());
+
+        me = passwordLogin(u, "yang1234"); // 다시 로그인 → 복구
+        mvc.perform(get("/api/users/" + u).session(other)).andExpect(status().isOk());
+
+        mvc.perform(post("/api/me/delete").session(me).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"password\":\"yang1234\"}")).andExpect(jsonPath("$.deleteAt").isNotEmpty());
+        mvc.perform(get("/api/users/" + u).session(other)).andExpect(status().isNotFound());
+        accountService.purgeExpired();
+        assertThat(jdbc.queryForObject("select count(*) from users where username = ?", Integer.class, u)).isOne();
+
+        jdbc.update("update users set delete_requested_at = now() - interval '31 days' where username = ?", u);
+        assertThat(accountService.purgeExpired()).isOne();
+        assertThat(jdbc.queryForObject("select count(*) from users where username = ?", Integer.class, u)).isZero();
+        mvc.perform(post("/api/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"login\":\"" + u + "\",\"password\":\"yang1234\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ------------------------------------------------------------ ④-b 안전·알림 설정
+
+    private void settings(MockHttpSession s, String json) throws Exception {
+        mvc.perform(patch("/api/me/settings").session(s).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(status().isOk());
+    }
+
+    private String comment(MockHttpSession s, String code, String text, int expected) throws Exception {
+        return mvc.perform(post("/api/posts/" + code + "/comments").session(s).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"body\":\"" + text + "\"}"))
+                .andExpect(status().is(expected)).andReturn().getResponse().getContentAsString();
+    }
+
+    /** 게시물 주인, 그를 팔로우하지 않고 그도 팔로우하지 않는 공개 성인 계정 */
+    private String[] ownerAndStranger() {
+        Map<String, Object> row = jdbc.queryForMap("""
+                select o.username as o, x.username as x from users o, users x
+                where o.id <> x.id and not o.is_private and not x.is_private and not o.totp_enabled
+                  and x.birth_date < current_date - interval '18 years'
+                  and exists (select 1 from posts p where p.author_id = o.id and p.deleted_at is null and not p.trial
+                              and not p.comments_disabled and not p.subscribers_only)
+                  and not exists (select 1 from follows f where f.follower_id = o.id and f.following_id = x.id)
+                  and not exists (select 1 from follows f where f.follower_id = x.id and f.following_id = o.id)
+                  and not exists (select 1 from blocks b where (b.blocker_id = o.id and b.blocked_id = x.id)
+                                  or (b.blocker_id = x.id and b.blocked_id = o.id))
+                  and not exists (select 1 from restricts r where r.user_id = o.id and r.restricted_id = x.id)
+                order by o.id, x.id limit 1""");
+        return new String[] {(String) row.get("o"), (String) row.get("x")};
+    }
+
+    private String postOf(String owner) {
+        return jdbc.queryForObject("""
+                select p.shortcode from posts p join users u on u.id = p.author_id where u.username = ?
+                  and p.deleted_at is null and not p.trial and not p.comments_disabled and not p.subscribers_only
+                order by p.id desc limit 1""", String.class, owner);
+    }
+
+    @Test
+    void 숨겨진_단어에_걸린_댓글은_쓴_사람만_보고_주인은_숨겨진_댓글에서_본다() throws Exception {
+        String[] ox = ownerAndStranger();
+        MockHttpSession owner = loginAs(ox[0]);
+        MockHttpSession writer = loginAs(ox[1]);
+        String code = postOf(ox[0]);
+        settings(owner, "{\"hideOffensive\":true,\"hiddenWords\":[\"스포일러\"]}");
+
+        int bad = JsonPath.read(comment(writer, code, "진짜 바보 같네", 201), "$.id");
+        int spoiler = JsonPath.read(comment(writer, code, "결말 스포일러 있음", 201), "$.id");
+        int fine = JsonPath.read(comment(writer, code, "사진 예뻐요", 201), "$.id");
+        String third = jdbc.queryForObject("select username from users where username not in (?, ?) and deleted_at is null order by id limit 1",
+                String.class, ox[0], ox[1]);
+
+        List<Integer> seenByOthers = JsonPath.read(mvc.perform(get("/api/posts/" + code + "/comments").session(loginAs(third)))
+                .andReturn().getResponse().getContentAsString(), "$.items[*].id");
+        assertThat(seenByOthers).contains(fine).doesNotContain(bad, spoiler);
+        List<Integer> seenByOwner = JsonPath.read(mvc.perform(get("/api/posts/" + code + "/comments").session(owner))
+                .andReturn().getResponse().getContentAsString(), "$.items[*].id");
+        assertThat(seenByOwner).doesNotContain(bad, spoiler);
+        List<Integer> seenByWriter = JsonPath.read(mvc.perform(get("/api/posts/" + code + "/comments").session(writer))
+                .andReturn().getResponse().getContentAsString(), "$.items[*].id");
+        assertThat(seenByWriter).contains(bad, spoiler, fine);
+        List<Integer> hidden = JsonPath.read(mvc.perform(get("/api/posts/" + code + "/comments/hidden").session(owner))
+                .andReturn().getResponse().getContentAsString(), "$[*].id");
+        assertThat(hidden).containsExactlyInAnyOrder(bad, spoiler);
+        mvc.perform(get("/api/posts/" + code + "/comments/hidden").session(writer)).andExpect(status().isForbidden());
+        // 숨긴 댓글은 알림도 가지 않는다
+        assertThat(jdbc.queryForObject("select count(*) from notifications where comment_id in (?, ?)", Integer.class, bad, spoiler)).isZero();
+    }
+
+    @Test
+    void 댓글_허용_범위를_줄이면_허용되지_않은_사람은_댓글을_달_수_없다() throws Exception {
+        String[] ox = ownerAndStranger();
+        MockHttpSession owner = loginAs(ox[0]);
+        MockHttpSession stranger = loginAs(ox[1]);
+        String code = postOf(ox[0]);
+        settings(owner, "{\"commentAudience\":\"FOLLOWERS\"}");
+        mvc.perform(get("/api/posts/" + code).session(stranger)).andExpect(jsonPath("$.extras.canComment").value(false));
+        comment(stranger, code, "안녕하세요", 403);
+
+        mvc.perform(put("/api/users/" + ox[0] + "/follow").session(stranger).with(csrf())).andExpect(status().isOk());
+        mvc.perform(get("/api/posts/" + code).session(stranger)).andExpect(jsonPath("$.extras.canComment").value(true));
+        comment(stranger, code, "팔로우했어요", 201);
+
+        settings(owner, "{\"commentAudience\":\"OFF\"}");
+        comment(stranger, code, "또 왔어요", 403);
+        comment(owner, code, "주인은 늘 가능", 201);
+        mvc.perform(patch("/api/me/settings").session(owner).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"commentAudience\":\"NOBODY\"}")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 알림_종류를_끄면_남지_않고_일시_중지하면_기록만_남는다() throws Exception {
+        String[] ox = ownerAndStranger();
+        MockHttpSession owner = loginAs(ox[0]);
+        MockHttpSession fan = loginAs(ox[1]);
+        String code = postOf(ox[0]);
+        long ownerId = jdbc.queryForObject("select id from users where username = ?", Long.class, ox[0]);
+        settings(owner, "{\"notifOff\":[\"LIKES\"]}");
+        mvc.perform(put("/api/posts/" + code + "/like").session(fan).with(csrf())).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select count(*) from notifications n join users a on a.id = n.actor_id "
+                + "where n.user_id = ? and a.username = ? and n.type = 'LIKE'", Integer.class, ownerId, ox[1])).isZero();
+
+        settings(owner, "{\"notifOff\":[],\"pauseMinutes\":60}");
+        mvc.perform(get("/api/me/settings").session(owner)).andExpect(jsonPath("$.notifPausedUntil").isNotEmpty());
+        comment(fan, code, "일시 중지 중 댓글", 201);
+        assertThat(jdbc.queryForObject("select count(*) from notifications n join users a on a.id = n.actor_id "
+                + "where n.user_id = ? and a.username = ? and n.type = 'COMMENT'", Integer.class, ownerId, ox[1])).isOne();
+        settings(owner, "{\"resumeNotifications\":true}");
+        mvc.perform(get("/api/me/settings").session(owner)).andExpect(jsonPath("$.notifPausedUntil").isEmpty());
+    }
+
+    @Test
+    void 민감한_콘텐츠는_덜_보기면_탐색에_안_나오고_10대는_바꿀_수_없다() throws Exception {
+        String adult = jdbc.queryForObject("""
+                select username from users where birth_date < current_date - interval '18 years' and deleted_at is null
+                order by following_count desc limit 1""", String.class);
+        MockHttpSession s = loginAs(adult);
+        settings(s, "{\"sensitiveLevel\":\"MORE\"}");
+        // 작은 시드에서는 탐색 첫 화면에 민감 표시 글이 없을 수 있어서, 첫 화면 글 몇 개에 직접 표시한다
+        List<String> first = JsonPath.read(mvc.perform(get("/api/explore").param("page", "0").session(s))
+                .andReturn().getResponse().getContentAsString(), "$.items[*].shortcode");
+        assertThat(first).isNotEmpty();
+        jdbc.update("update posts set sensitive = true where shortcode in ("
+                + String.join(",", first.stream().limit(3).map(c -> "'" + c + "'").toList()) + ")");
+        boolean sawSensitive = false;
+        for (int page = 0; page < 6 && !sawSensitive; page++) {
+            List<String> codes = JsonPath.read(mvc.perform(get("/api/explore").param("page", String.valueOf(page)).session(s))
+                    .andReturn().getResponse().getContentAsString(), "$.items[*].shortcode");
+            if (codes.isEmpty()) break;
+            sawSensitive = jdbc.queryForObject("select count(*) from posts where sensitive and shortcode in ("
+                    + String.join(",", codes.stream().map(c -> "'" + c + "'").toList()) + ")", Integer.class) > 0;
+        }
+        assertThat(sawSensitive).as("더 보기면 민감 표시 게시물도 탐색에 나온다").isTrue();
+        settings(s, "{\"sensitiveLevel\":\"LESS\"}");
+        for (int page = 0; page < 6; page++) {
+            List<String> codes = JsonPath.read(mvc.perform(get("/api/explore").param("page", String.valueOf(page)).session(s))
+                    .andReturn().getResponse().getContentAsString(), "$.items[*].shortcode");
+            if (codes.isEmpty()) break;
+            assertThat(jdbc.queryForObject("select count(*) from posts where sensitive and shortcode in ("
+                    + String.join(",", codes.stream().map(c -> "'" + c + "'").toList()) + ")", Integer.class)).isZero();
+        }
+        String teen = jdbc.queryForObject("""
+                select username from users where birth_date > current_date - interval '18 years' and deleted_at is null
+                order by id limit 1""", String.class);
+        MockHttpSession t = loginAs(teen);
+        mvc.perform(get("/api/me/settings").session(t)).andExpect(jsonPath("$.sensitiveLevel").value("LESS"))
+                .andExpect(jsonPath("$.sensitiveLocked").value(true));
+        mvc.perform(patch("/api/me/settings").session(t).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sensitiveLevel\":\"MORE\"}")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 임시_저장한_게시물은_예약_목록과_따로_있고_지금_게시할_수_있다() throws Exception {
+        MockHttpSession s = loginAs(adult());
+        MockMultipartFile photo = new MockMultipartFile("files", "a.png", "image/png", png(400, 500));
+        String draft = mvc.perform(multipart("/api/posts/drafts").file(photo)
+                        .file(json("data", "{\"caption\":\"임시 저장 글\"}")).session(s).with(csrf()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.scheduledAt").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+        int id = JsonPath.read(draft, "$.id");
+        mvc.perform(get("/api/me/drafts").session(s)).andExpect(jsonPath("$[0].id").value(id));
+        mvc.perform(get("/api/me/scheduled").session(s)).andExpect(jsonPath("$[?(@.id == " + id + ")]").isEmpty());
+        mvc.perform(post("/api/me/scheduled/" + id + "/publish").session(s).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.caption").value("임시 저장 글"));
+        mvc.perform(get("/api/me/drafts").session(s)).andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void 수면_모드_시간에는_알림을_기록만_한다() throws Exception {
+        String[] ox = ownerAndStranger();
+        MockHttpSession owner = loginAs(ox[0]);
+        int h = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Seoul")).getHour();
+        settings(owner, "{\"sleepOn\":true,\"sleepStart\":" + h + ",\"sleepEnd\":" + ((h + 2) % 24) + "}");
+        mvc.perform(get("/api/me/settings").session(owner)).andExpect(jsonPath("$.sleepingNow").value(true));
+        settings(owner, "{\"sleepStart\":" + ((h + 3) % 24) + ",\"sleepEnd\":" + ((h + 4) % 24) + "}");
+        mvc.perform(get("/api/me/settings").session(owner)).andExpect(jsonPath("$.sleepingNow").value(false));
+    }
+
+    @Test
+    void 홈_피드를_여러_쪽_넘겨도_같은_게시물이_두_번_나오지_않는다_광고_포함() throws Exception {
+        // 전체 기능 점검에서 찾음: 앞쪽에 보통 글로 나온 게시물이 뒤쪽에서 광고로 또 나왔다
+        String u = jdbc.queryForObject("select username from users where deleted_at is null order by following_count desc limit 1", String.class);
+        MockHttpSession s = loginAs(u);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String cursor = null;
+        for (int page = 0; page < 8; page++) {
+            var req = get("/api/feed").param("mode", "home").session(s);
+            if (cursor != null) req = req.param("cursor", cursor);
+            String body = mvc.perform(req).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            List<String> codes = JsonPath.read(body, "$.items[*].shortcode");
+            for (String c : codes) assertThat(seen.add(c)).as("중복: " + c + " (" + page + "쪽)").isTrue();
+            cursor = JsonPath.read(body, "$.nextCursor");
+            if (cursor == null) break;
+        }
+        assertThat(seen.size()).isGreaterThan(10);
+    }
+
+    @Test
+    void 같은_시드값이면_하루_중_몇_시에_만들든_같은_데이터가_나온다() {
+        // 게시물 시각을 "저녁 7~11시"처럼 하루 중 시각에 맞추던 때는, 만드는 시각에 따라 난수를 뽑는 수가 달라져
+        // 같은 시드값이어도 데이터가 어긋났다 (여러 테스트가 시간대에 따라 흔들린 원인)
+        List<String> first = jdbc.queryForList("select shortcode from posts order by id", String.class);
+        Integer likes = jdbc.queryForObject("select count(*) from likes", Integer.class);
+        Integer follows = jdbc.queryForObject("select count(*) from follows", Integer.class);
+        Integer stories = jdbc.queryForObject("select count(*) from stories", Integer.class);
+        try {
+            clock.setOffset(java.time.Duration.ofHours(9).plusMinutes(37));
+            seedService.generate(SeedSize.SMALL, 42);
+            assertThat(jdbc.queryForList("select shortcode from posts order by id", String.class)).isEqualTo(first);
+            assertThat(jdbc.queryForObject("select count(*) from likes", Integer.class)).isEqualTo(likes);
+            assertThat(jdbc.queryForObject("select count(*) from follows", Integer.class)).isEqualTo(follows);
+            assertThat(jdbc.queryForObject("select count(*) from stories", Integer.class)).isEqualTo(stories);
+        } finally {
+            clock.setOffset(java.time.Duration.ZERO);
+        }
     }
 }

@@ -197,6 +197,8 @@ export interface PostExtras {
   pinned: boolean
   /** 음악 */
   audio: AudioRef | null
+  /** 게시물 주인의 댓글 허용 범위에 내가 들어가는지 */
+  canComment: boolean
 }
 
 export interface ProductView {
@@ -239,6 +241,7 @@ export interface ScheduledPost {
   thumbUrl: string
   captionStart: string | null
   mediaCount: number
+  /** 임시 저장이면 null */
   scheduledAt: string
   createdAt: string
   status: 'PENDING' | 'PUBLISHED' | 'FAILED'

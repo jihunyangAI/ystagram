@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router'
 import { Logo } from '../../components/Logo'
-import { ApiError } from '../../lib/api'
+import { ApiError, api } from '../../lib/api'
 import { useMe, useSignup } from '../../lib/auth'
 import type { SignupInput } from '../../lib/auth'
 import { AuthShell } from './AuthShell'
@@ -29,6 +29,24 @@ export function SignupPage() {
   const signup = useSignup()
   const navigate = useNavigate()
   const [form, setForm] = useState<SignupInput>({ email: '', password: '', fullName: '', username: '', birthDate: '' })
+  // 가입 인증 코드: 첫 "가입"은 코드를 보내고, 코드를 넣은 뒤 다시 누르면 가입
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
+  const [code, setCode] = useState('')
+  const [sending, setSending] = useState(false)
+  const [codeError, setCodeError] = useState<string | null>(null)
+  const sendCode = async () => {
+    setSending(true)
+    setCodeError(null)
+    try {
+      const r = await api.post<{ sentTo: string }>('/api/auth/signup/code', { email: form.email })
+      setCodeSentTo(r.sentTo)
+      setCode('')
+    } catch (e) {
+      setCodeError((e as Error).message)
+    } finally {
+      setSending(false)
+    }
+  }
 
   if (me) return <Navigate to="/" replace />
 
@@ -39,9 +57,14 @@ export function SignupPage() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    signup.mutate(form, { onSuccess: () => navigate('/', { replace: true }) })
+    if (!codeSentTo || codeSentTo !== form.email.trim().toLowerCase()) {
+      void sendCode()
+      return
+    }
+    signup.mutate({ ...form, code }, { onSuccess: () => navigate('/', { replace: true }) })
   }
-  const filled = Object.values(form).every((v) => v.trim() !== '')
+  const filled = [form.email, form.password, form.fullName, form.username, form.birthDate].every((v) => v.trim() !== '')
+  const waitingCode = !!codeSentTo && codeSentTo === form.email.trim().toLowerCase()
 
   return (
     <AuthShell
@@ -93,8 +116,33 @@ export function SignupPage() {
           {fieldError('birthDate') && <p className="mt-1 text-xs text-danger">{fieldError('birthDate')}</p>}
         </div>
 
-        <button type="submit" className="btn btn-primary mt-3 w-full" disabled={!filled || signup.isPending}>
-          {signup.isPending ? '가입 중…' : '가입'}
+        {waitingCode && (
+          <div className="rounded-lg bg-surface-2 p-3 text-sm">
+            <p>
+              <b>{codeSentTo}</b>(으)로 보낸 6자리 코드를 입력하세요.
+            </p>
+            <p className="mt-1 text-xs text-muted">연구용: 실제 메일은 가지 않고 Lab → 인증 코드에 보입니다.</p>
+            <input
+              className="input mt-2"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="인증 코드"
+              aria-label="인증 코드"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            />
+            <button type="button" className="mt-1 text-xs font-semibold text-primary" onClick={sendCode} disabled={sending}>
+              코드 다시 받기
+            </button>
+          </div>
+        )}
+        {codeError && <p className="text-center text-sm text-danger">{codeError}</p>}
+        <button
+          type="submit"
+          className="btn btn-primary mt-3 w-full"
+          disabled={!filled || signup.isPending || sending || (waitingCode && code.length !== 6)}
+        >
+          {signup.isPending ? '가입 중…' : sending ? '코드 보내는 중…' : waitingCode ? '가입' : '인증 코드 받기'}
         </button>
         {generalError && <p className="pt-2 text-center text-sm text-danger">{generalError}</p>}
       </form>

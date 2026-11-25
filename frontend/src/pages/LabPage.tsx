@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router'
 import { Clock, RefreshCw, Search } from 'lucide-react'
 import { LabHeader } from '../components/lab/LabNav'
 import { LabUserList } from '../components/lab/LabUserList'
+import { LabCodes } from '../components/lab/LabCodes'
 import { toast } from '../components/Toast'
 import { api } from '../lib/api'
 import { useSetSession } from '../lib/auth'
@@ -143,6 +144,8 @@ export function LabPage() {
           돌아갑니다.
         </p>
       </section>
+
+      <LabCodes />
 
       <section aria-labelledby="lab-seed" className="rounded-xl border border-border p-5">
         <h2 id="lab-seed" className="font-semibold">가짜 데이터 다시 만들기</h2>

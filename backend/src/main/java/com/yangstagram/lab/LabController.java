@@ -104,7 +104,7 @@ public class LabController {
     public MeResponse impersonate(@PathVariable String username,
                                   HttpServletRequest request, HttpServletResponse response) {
         User user = userService.getByUsername(username);
-        sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response);
+        sessionLogin.login(AppUserDetailsService.toAuthUser(user), request, response, "LAB");
         return MeResponse.from(user);
     }
 

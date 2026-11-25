@@ -55,7 +55,8 @@ export function HomePage() {
   }, [feed])
 
   if (!me) return null
-  const posts = feed.data?.pages.flatMap((p) => p.items) ?? []
+  // 쪽을 이어 붙일 때 같은 게시물이 또 오면(광고·추천이 겹치는 경우 등) 처음 것만 남긴다
+  const posts = dedupe(feed.data?.pages.flatMap((p) => p.items) ?? [])
 
   return (
     <div className="mx-auto flex w-full max-w-[935px] justify-center gap-16 md:pt-6">
@@ -194,4 +195,9 @@ function EmptyFavorites() {
       </Link>
     </div>
   )
+}
+
+function dedupe<T extends { shortcode: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter((p) => !seen.has(p.shortcode) && !!seen.add(p.shortcode))
 }

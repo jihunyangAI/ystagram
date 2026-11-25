@@ -27,8 +27,21 @@ public class UserService {
         this.clock = clock;
     }
 
-    @Transactional
-    public User signUp(SignupRequest req) {
+    /** 가입 전 검사 (사용자 이름 규칙·중복, 이메일 중복, 나이). 통과하면 아무것도 하지 않는다 */
+    @Transactional(readOnly = true)
+    public void validateSignup(SignupRequest req) {
+        check(req);
+    }
+
+    /** 가입 인증 코드를 보내기 전에 이메일만 확인 */
+    @Transactional(readOnly = true)
+    public void requireEmailFree(String rawEmail) {
+        if (userRepository.existsByEmail(rawEmail.trim().toLowerCase())) {
+            throw ApiException.conflict("EMAIL_TAKEN", "이미 가입된 이메일입니다.");
+        }
+    }
+
+    private void check(SignupRequest req) {
         String username = UsernamePolicy.normalize(req.username());
         String problem = UsernamePolicy.validate(username);
         if (problem != null) {
@@ -45,7 +58,14 @@ public class UserService {
         if (req.birthDate().isAfter(today) || Period.between(req.birthDate(), today).getYears() < MIN_AGE) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "TOO_YOUNG", "만 13세 이상만 가입할 수 있습니다.");
         }
+    }
 
+    @Transactional
+    public User signUp(SignupRequest req) {
+        check(req);
+        String username = UsernamePolicy.normalize(req.username());
+        String email = req.email().trim().toLowerCase();
+        LocalDate today = LocalDate.now(clock);
         User user = User.signUp(username, email, passwordEncoder.encode(req.password()),
                 req.fullName().trim(), req.birthDate(), Instant.now(clock));
         if (Teens.isTeen(req.birthDate(), today)) {

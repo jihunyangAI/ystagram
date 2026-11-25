@@ -154,6 +154,8 @@ public class SeedService {
                 m52.products(), m52.productTags(), m52.orders(), m52.subscriptions(), m52.exclusivePosts(), m52.gifts(),
                 m52.remixes(), m52.pastLives());
 
+        // 연구용 "민감할 수 있는 콘텐츠" 표시 (약 3%): 민감 콘텐츠 설정이 추천에서 거르는지 실험
+        jdbc.update("update posts set sensitive = true where id % 29 = 0");
         int tracks = new SeedMusic(jdbc, rnd, now).generate();
         log.info("M6 데이터: 음원·원본 오디오={}", tracks);
 

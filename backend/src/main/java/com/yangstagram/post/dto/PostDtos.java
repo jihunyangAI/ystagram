@@ -93,8 +93,8 @@ public final class PostDtos {
      */
     public record Extras(RemixRef remixOf, int remixCount, boolean allowRemix, List<ProductTag> products,
                          boolean subscribersOnly, Long giftStars, boolean archived, boolean pinned,
-                         com.yangstagram.audio.AudioService.AudioRef audio) {
-        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false, null);
+                         com.yangstagram.audio.AudioService.AudioRef audio, boolean canComment) {
+        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false, null, true);
     }
 
     /** @param available 원본이 지워졌거나 볼 수 없으면 false (영상 주소 없음) */

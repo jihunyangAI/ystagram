@@ -61,6 +61,8 @@ export interface SignupInput {
   username: string
   password: string
   birthDate: string
+  /** 이메일로 받은 6자리 인증 코드 */
+  code?: string
 }
 
 export function useSignup() {

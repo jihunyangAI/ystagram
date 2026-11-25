@@ -89,7 +89,12 @@ test('계정: 가입 → 비공개 전환 → 다크 모드 → 로그아웃 →
   await page.getByPlaceholder('성명').fill('이투이')
   await page.getByPlaceholder('사용자 이름').fill(name)
   await page.getByLabel(/생년월일/).fill('1995-05-05')
-  await page.getByRole('button', { name: /가입/ }).click()
+  // 가입 인증 코드: "이메일로 보낸" 코드는 Lab(/api/lab/codes)에서 읽는다
+  await page.getByRole('button', { name: '인증 코드 받기' }).click()
+  await expect(page.getByLabel('인증 코드')).toBeVisible()
+  const codes = (await (await page.request.get('/api/lab/codes')).json()) as { target: string; code: string }[]
+  await page.getByLabel('인증 코드').fill(codes.find((c) => c.target === `${name}@example.com`)!.code)
+  await page.getByRole('button', { name: '가입', exact: true }).click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByText(/환영합니다|추천/).first()).toBeVisible()
 

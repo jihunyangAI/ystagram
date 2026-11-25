@@ -161,9 +161,9 @@ class M5IntegrationTest {
     @Test
     void 이단계_인증을_켜면_비밀번호_다음에_코드를_묻고_백업_코드는_한_번만_쓴다() throws Exception {
         MockHttpSession s = new MockHttpSession();
-        postJson("/api/auth/signup", s, """
+        postJson("/api/auth/signup", s, SignupCodes.with(mvc, jdbc, """
                 {"email":"tfa@example.com","fullName":"이단계","username":"tfa.user","password":"secret1","birthDate":"1990-01-01"}
-                """).andExpect(status().isCreated());
+                """)).andExpect(status().isCreated());
         // 설정 전(비밀값 NULL)에 Lab 코드를 물으면 500이 아니라 400 (E2E에서 찾은 NPE)
         mvc.perform(get("/api/lab/2fa/tfa.user/code")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("NO_SECRET"));

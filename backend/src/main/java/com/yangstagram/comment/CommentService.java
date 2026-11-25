@@ -52,9 +52,11 @@ public class CommentService {
             """.formatted(UserRows.cols("u"));
 
     /** 보는 사람(:me)에게 보이는 댓글 (:owner = 게시물 주인) */
-    private static final String SHOWN = " and (not c.restricted or c.author_id = :me or :owner = :me) and "
+    private static final String SHOWN = " and (not c.restricted or c.author_id = :me or :owner = :me)"
+            + " and (not c.hidden or c.author_id = :me) and "
             + RelationSql.notBlocked("u.id");
 
+    private final com.yangstagram.settings.SettingsService userSettings;
     private final NamedParameterJdbcTemplate jdbc;
     private final PostService postService;
     private final NotificationService notifications;
@@ -65,7 +67,8 @@ public class CommentService {
 
     public CommentService(NamedParameterJdbcTemplate jdbc, PostService postService,
                           NotificationService notifications, Mentions mentions, RelationService relations,
-                          LabClock clock, EventService events) {
+                          LabClock clock, EventService events, com.yangstagram.settings.SettingsService userSettings) {
+        this.userSettings = userSettings;
         this.jdbc = jdbc;
         this.postService = postService;
         this.notifications = notifications;
@@ -105,6 +108,19 @@ public class CommentService {
         List<CommentView> all = new ArrayList<>(pinned);
         all.addAll(page);
         return new Slice<>(withReplyCounts(all), next);
+    }
+
+    /** 숨겨진 단어로 숨긴 댓글 (게시물 주인만) */
+    public List<CommentView> hidden(String shortcode, long viewerId) {
+        PostRow post = postService.getVisible(shortcode, viewerId);
+        if (post.author().id() != viewerId) {
+            throw ApiException.forbidden("NOT_AUTHOR", "게시물 주인만 숨겨진 댓글을 볼 수 있습니다.");
+        }
+        Instant now = Instant.now(clock);
+        return jdbc.query(SELECT + """
+                where c.post_id = :post and c.hidden and u.deleted_at is null order by c.id limit 200
+                """, new MapSqlParameterSource("post", post.id()).addValue("me", viewerId),
+                (rs, i) -> PostQueries.comment(rs, viewerId, post.author().id(), now, 0));
     }
 
     /** 답글 전체 (오래된 순). 한 댓글의 답글은 많지 않으므로 페이지 없이 */
@@ -155,17 +171,22 @@ public class CommentService {
         if (relations.blockedEitherWay(viewerId, post.author().id())) {
             throw ApiException.forbidden("BLOCKED", "이 게시물에는 댓글을 달 수 없습니다.");
         }
+        if (!userSettings.canComment(post.author().id(), viewerId)) {
+            throw ApiException.forbidden("COMMENTS_LIMITED", "게시물 주인이 댓글을 달 수 있는 사람을 제한했습니다.");
+        }
         boolean restricted = relations.restricts(post.author().id(), viewerId);
+        // 숨겨진 단어: 게시물 주인의 설정에 걸리면 쓴 사람만 보이고 알림도 가지 않는다
+        boolean hidden = viewerId != post.author().id() && userSettings.shouldHide(post.author().id(), body);
         Instant now = Instant.now(clock);
         Long id = jdbc.queryForObject("""
-                insert into comments (post_id, author_id, parent_id, body, created_at, restricted)
-                values (:post, :me, :parent, :body, :now, :restricted) returning id
+                insert into comments (post_id, author_id, parent_id, body, created_at, restricted, hidden)
+                values (:post, :me, :parent, :body, :now, :restricted, :hidden) returning id
                 """, new MapSqlParameterSource("post", post.id()).addValue("me", viewerId)
                 .addValue("parent", parentId).addValue("body", body).addValue("now", Timestamp.from(now))
-                .addValue("restricted", restricted), Long.class);
+                .addValue("restricted", restricted).addValue("hidden", hidden), Long.class);
         jdbc.update("update posts set comment_count = comment_count + 1 where id = :id", Map.of("id", post.id()));
 
-        if (restricted) {
+        if (restricted || hidden) {
             return get(id, viewerId, post); // 제한된 댓글: 승인 전에는 아무에게도 알리지 않는다
         }
         Set<Long> notified = new HashSet<>();

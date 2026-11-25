@@ -46,6 +46,11 @@ export function CommentsSheet({ post, open, onClose }: { post: PostView; open: b
           </button>
         )}
       </div>
+      {!post.extras.canComment ? (
+        <p className="shrink-0 border-t border-border px-4 py-3 text-center text-xs text-muted">
+          게시물 주인이 댓글을 달 수 있는 사람을 제한했습니다.
+        </p>
+      ) : (
       <CommentInput
         shortcode={post.shortcode}
         inputRef={input}
@@ -53,6 +58,7 @@ export function CommentsSheet({ post, open, onClose }: { post: PostView; open: b
         onCancelReply={() => setReplyTo(null)}
         className="shrink-0 border-t border-border px-4 pb-1"
       />
+      )}
     </Modal>
   )
 }

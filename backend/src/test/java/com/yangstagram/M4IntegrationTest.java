@@ -210,7 +210,10 @@ class M4IntegrationTest {
 
     @Test
     void 해시태그_제한은_기능_플래그를_따른다() throws Exception {
-        String user = activeUser();
+        // 게시물이 있는 사람 (가장 활발한 사람이 글을 안 올리는 "보기만 하는" 계정일 수 있다)
+        String user = jdbc.queryForObject("""
+                select u.username from users u where exists (select 1 from posts p where p.author_id = u.id)
+                order by u.following_count desc, u.id limit 1""", String.class);
         String code = jdbc.queryForObject("""
                 select p.shortcode from posts p join users u on u.id = p.author_id where u.username = ? limit 1""",
                 String.class, user);

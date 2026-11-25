@@ -13,6 +13,7 @@ import { useComments, usePost, useToggleLike } from '../../lib/posts'
 import type { PostView } from '../../lib/types'
 import { NotFoundPage } from '../NotFoundPage'
 import { PostCommerceBar } from '../../components/shop/PostCommerceBar'
+import { HiddenCommentsButton } from '../settings/SafetyPages'
 
 /**
  * 게시물 상세 (/p/:shortcode).
@@ -153,6 +154,7 @@ function PostDetail({ post }: { post: PostView }) {
               onReply={post.commentsDisabled ? undefined : startReply}
             />
           ))}
+          {post.mine && <HiddenCommentsButton shortcode={post.shortcode} />}
           {comments.hasNextPage && (
             <button
               className="my-2 w-full rounded-lg py-2 text-sm text-muted hover:bg-surface-2"
@@ -175,7 +177,12 @@ function PostDetail({ post }: { post: PostView }) {
           <time className="block px-3 pt-1 pb-2 text-xs text-muted md:px-0" dateTime={post.createdAt} title={fullDate(post.createdAt)}>
             {timeAgo(post.createdAt, 'long')}
           </time>
-          {!post.commentsDisabled && (
+          {!post.commentsDisabled && !post.extras.canComment && (
+            <p className="border-t border-border px-3 py-3 text-center text-xs text-muted md:px-0">
+              게시물 주인이 댓글을 달 수 있는 사람을 제한했습니다.
+            </p>
+          )}
+          {!post.commentsDisabled && post.extras.canComment && (
             <CommentInput
               shortcode={post.shortcode}
               inputRef={input}

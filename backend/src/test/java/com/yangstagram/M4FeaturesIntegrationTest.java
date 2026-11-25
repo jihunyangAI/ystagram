@@ -285,8 +285,8 @@ class M4FeaturesIntegrationTest {
         MockHttpSession teen = new MockHttpSession();
         String birth = java.time.LocalDate.now().minusYears(15).toString();
         mvc.perform(post("/api/auth/signup").session(teen).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"teen@example.com\",\"fullName\":\"십대\",\"username\":\"teen.test\","
-                        + "\"password\":\"secret1\",\"birthDate\":\"" + birth + "\"}"))
+                .content(SignupCodes.with(mvc, jdbc, "{\"email\":\"teen@example.com\",\"fullName\":\"십대\",\"username\":\"teen.test\","
+                        + "\"password\":\"secret1\",\"birthDate\":\"" + birth + "\"}")))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.teen").value(true))
                 .andExpect(jsonPath("$.user.isPrivate").value(true));
 
@@ -338,7 +338,12 @@ class M4FeaturesIntegrationTest {
     @Test
     void 홈_피드에_광고가_끼고_숨기면_다시_나오지_않으며_끌_수_있다() throws Exception {
         assertThat(jdbc.queryForObject("select count(*) from ads", Integer.class)).isPositive();
-        String user = mutuals()[0];
+        // 팔로우하는 계정의 글은 광고로 다시 나오지 않으므로(피드에 그냥 나옴), 광고주를 팔로우하지 않는 사람으로
+        String user = jdbc.queryForObject("""
+                select u.username from users u where u.birth_date < current_date - interval '18 years'
+                  and u.following_count >= 5 and not exists (select 1 from follows f join ads ad on ad.advertiser_id = f.following_id
+                                                               where f.follower_id = u.id)
+                order by u.following_count desc, u.id limit 1""", String.class);
         MockHttpSession s = loginAs(user);
         String feed = body(mvc.perform(get("/api/feed").session(s)));
         List<Map<String, Object>> ads = JsonPath.read(feed, "$.items[?(@.ad != null)]");
@@ -369,8 +374,8 @@ class M4FeaturesIntegrationTest {
     void 가짜_사용자에게_DM을_보내면_몇_초_뒤_답장이_온다() throws Exception {
         MockHttpSession me = new MockHttpSession();
         mvc.perform(post("/api/auth/signup").session(me).with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"email\":\"bot.test@example.com\",\"fullName\":\"봇 시험\",\"username\":\"bot.tester\","
-                        + "\"password\":\"secret1\",\"birthDate\":\"1990-01-01\"}")).andExpect(status().isCreated());
+                .content(SignupCodes.with(mvc, jdbc, "{\"email\":\"bot.test@example.com\",\"fullName\":\"봇 시험\",\"username\":\"bot.tester\","
+                        + "\"password\":\"secret1\",\"birthDate\":\"1990-01-01\"}"))).andExpect(status().isCreated());
         String fake = jdbc.queryForObject("""
                 select username from users where is_fake and birth_date < current_date - interval '18 years'
                 order by id limit 1

@@ -170,21 +170,29 @@ final class SeedPosts {
         return posts;
     }
 
-    /** 최근 1년 안, 최근일수록 촘촘하게, 저녁 7~11시에 절반 */
+    /**
+     * 최근 1년 안, 최근일수록 촘촘하게.
+     * 시각은 "지금"에서 거꾸로 센 분으로만 정한다: 하루 중 몇 시(저녁 7~11시 등)에 맞추면 시드를 만드는 시각에 따라
+     * 미래가 되는 글이 달라지고, 그때마다 난수를 더 뽑아서 같은 시드값이어도 데이터가 어긋났다(테스트가 시간대에 따라 흔들림).
+     * 그래서 난수는 언제나 같은 개수만 뽑고, 모든 비교를 "지금 기준 몇 분 전"으로 한다.
+     */
     private Instant postTime(FakeUser u) {
-        double maxDays = Math.min(365, Duration.between(u.createdAt, now).toDays());
-        double daysAgo = maxDays * Math.pow(rnd.nextDouble(), 1.8);
-        ZonedDateTime t = now.minus(Duration.ofMinutes((long) (daysAgo * 24 * 60))).atZone(SEOUL);
-        int hour = rnd.nextDouble() < 0.5 ? 19 + rnd.nextInt(5) : 8 + rnd.nextInt(11);
-        t = t.withHour(hour).withMinute(rnd.nextInt(60)).withSecond(rnd.nextInt(60));
-        Instant result = t.toInstant();
-        if (result.isAfter(now)) {
-            result = result.minus(Duration.ofDays(1));
-        }
-        if (result.isBefore(u.createdAt)) {
-            result = u.createdAt.plus(Duration.ofHours(1 + rnd.nextInt(48)));
-        }
-        return result.isAfter(now) ? now.minus(Duration.ofMinutes(5 + rnd.nextInt(120))) : result;
+        double r1 = rnd.nextDouble();
+        boolean evening = rnd.nextDouble() < 0.5;
+        int eveningHour = rnd.nextInt(5);
+        int dayHour = rnd.nextInt(11);
+        int minute = rnd.nextInt(60);
+        int second = rnd.nextInt(60);
+        int late = rnd.nextInt(48);
+        int recent = rnd.nextInt(120);
+        long userAgeMin = Duration.between(u.createdAt, now).toMinutes();
+        double maxDays = Math.min(365, userAgeMin / 1440.0);
+        int dayIndex = (int) (maxDays * Math.pow(r1, 1.8));
+        int hour = evening ? 19 + eveningHour : 8 + dayHour;
+        long before = (long) dayIndex * 1440 + (24L - hour) * 60 - minute;
+        if (before >= userAgeMin) before = Math.max(5L + recent, userAgeMin - 60L * (1 + late));
+        if (before < 5) before = 5L + recent;
+        return now.minus(Duration.ofMinutes(before)).minusSeconds(second);
     }
 
     /**

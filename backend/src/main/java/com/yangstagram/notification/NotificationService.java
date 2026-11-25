@@ -32,11 +32,13 @@ public class NotificationService {
     private static final Duration KEEP = Duration.ofDays(60);
     private static final int SCAN_LIMIT = 500;
 
+    private final com.yangstagram.settings.SettingsService userSettings;
     private final NamedParameterJdbcTemplate jdbc;
     private final Realtime realtime;
     private final LabClock clock;
 
-    public NotificationService(NamedParameterJdbcTemplate jdbc, Realtime realtime, LabClock clock) {
+    public NotificationService(NamedParameterJdbcTemplate jdbc, Realtime realtime, LabClock clock, com.yangstagram.settings.SettingsService userSettings) {
+        this.userSettings = userSettings;
         this.jdbc = jdbc;
         this.realtime = realtime;
         this.clock = clock;
@@ -73,6 +75,9 @@ public class NotificationService {
         Integer muted = jdbc.queryForObject("select count(*) from mutes where user_id = :a and muted_id = :b",
                 Map.of("a", recipient, "b", actor), Integer.class);
         if ((excluded != null && excluded > 0) || (muted != null && muted > 0)) return;
+        // 알림 설정: 끈 종류는 남기지 않고, 일시 중지·수면 모드 중에는 기록만 남긴다(실시간 알림 없음)
+        var delivery = userSettings.delivery(recipient, type);
+        if (delivery == com.yangstagram.settings.SettingsService.Delivery.DROP) return;
         String text = body == null ? null : body.length() > 200 ? body.substring(0, 199) + "…" : body;
         jdbc.update("""
                 insert into notifications (user_id, actor_id, type, post_id, comment_id, story_id, body, created_at)
@@ -80,6 +85,7 @@ public class NotificationService {
                 """, new MapSqlParameterSource("to", recipient).addValue("actor", actor).addValue("type", type.name())
                 .addValue("post", postId).addValue("comment", commentId).addValue("story", storyId)
                 .addValue("body", text).addValue("now", Timestamp.from(Instant.now(clock))));
+        if (delivery == com.yangstagram.settings.SettingsService.Delivery.QUIET) return;
         UserSummary actorSummary = jdbc.queryForObject(
                 "select %s from users u where u.id = :id".formatted(UserRows.cols("u")),
                 Map.of("id", actor), (rs, i) -> UserRows.read(rs, "u"));

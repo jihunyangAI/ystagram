@@ -23,5 +23,8 @@ public record SignupRequest(
         String password,
 
         @NotNull(message = "생년월일을 입력해 주세요.")
-        LocalDate birthDate) {
+        LocalDate birthDate,
+
+        /** 이메일로 받은 6자리 인증 코드 (POST /api/auth/signup/code) */
+        String code) {
 }

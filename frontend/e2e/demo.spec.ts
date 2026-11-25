@@ -2,7 +2,7 @@
 // 개발 서버의 가짜 데이터를 쓰고, 만든 것(게시물·스토리·팔로우·가중치·가상 시계)은 끝나면 되돌린다.
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
-import { PASSWORD, addMinutes, apiAs, call, loginAs, newUserPage, pickUsers, resetClock, solidPng } from './helpers'
+import { PASSWORD, addMinutes, apiAs, call, createStory, loginAs, newUserPage, pickUsers, resetClock, solidPng } from './helpers'
 
 let A: string, B: string, C: string
 const cleanups: (() => Promise<unknown>)[] = []
@@ -22,6 +22,20 @@ test.describe.configure({ mode: 'serial' })
 let sharedShortcode = ''
 
 test('1. A로 로그인하면 홈 피드에 팔로우 게시물과 스토리가 보인다', async ({ page }) => {
+  // 시드 스토리는 24시간이 지나면 사라지므로(개발 DB를 며칠 두면 트레이가 빈다), A가 팔로우하는 사람의 스토리를 하나 올려 둔다
+  const asA = await apiAs(A)
+  const following = await call<{ items: { user: { username: string } }[] } | { user: { username: string } }[]>(
+    asA, 'GET', `/api/users/${A}/following`,
+  )
+  const list = Array.isArray(following) ? following : following.items
+  await asA.dispose()
+  const friend = await apiAs(list[0].user.username)
+  const storyId = await createStory(friend)
+  cleanups.push(async () => {
+    await call(friend, 'DELETE', `/api/stories/${storyId}`)
+    await friend.dispose()
+  })
+
   await page.goto('/accounts/login')
   await page.getByPlaceholder('사용자 이름 또는 이메일').fill(A)
   await page.getByPlaceholder('비밀번호').fill(PASSWORD)

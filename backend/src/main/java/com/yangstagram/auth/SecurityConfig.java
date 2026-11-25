@@ -21,7 +21,8 @@ import org.springframework.security.web.authentication.logout.HttpStatusReturnin
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, SessionLogin sessionLogin,
+                                                   com.yangstagram.account.AccountService accounts) throws Exception {
         http
                 .csrf(csrf -> csrf.spa())
                 .authorizeHttpRequests(auth -> auth
@@ -34,10 +35,15 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout
                         .logoutUrl("/api/auth/logout")
+                        // 로그인 기록도 끊긴 것으로 (이 브라우저에 추가한 계정 모두)
+                        .addLogoutHandler((req, res, auth) -> sessionLogin.revokeBrowser(req))
                         .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT)))
                 .exceptionHandling(ex -> ex
                         // 로그인이 필요하면 로그인 페이지로 보내지 않고 401만 돌려준다 (화면이 처리)
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                // 다른 곳에서 끊은 로그인(원격 로그아웃)은 요청을 처리하기 전에 로그아웃 상태로
+                .addFilterAfter(new LoginSessionFilter(accounts),
+                        org.springframework.security.web.context.SecurityContextHolderFilter.class);
         return http.build();
     }
 

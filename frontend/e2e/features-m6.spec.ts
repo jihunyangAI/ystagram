@@ -1,8 +1,8 @@
 // M6: §4에 있었지만 빠졌던 기능 — 게시물 ⋯ 메뉴(보관·고정·좋아요 수 숨기기·댓글 끄기), 보관함, 최근 삭제됨
-import { expect, test } from '@playwright/test'
+import { expect, request as pwRequest, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { F, open, other, sheet, useFeatureSetup } from './feature-setup'
-import { call, createPost, solidPng } from './helpers'
+import { BASE, call, createPost, solidPng } from './helpers'
 
 useFeatureSetup()
 
@@ -183,4 +183,183 @@ test('스토리: 그리기 → 음악 추가 → 공유 → 보는 사람 화면
   const story = mine[mine.length - 1]
   F.cleanups.push(() => call(F.asA, 'DELETE', `/api/stories/${story.id}`).catch(() => undefined))
   expect(story.audio?.title).toBe('Neon Seoul')
+})
+
+// ------------------------------------------------------------------ ④-a 계정 센터
+
+test('계정 센터: 비밀번호 재설정(코드) → 로그인 활동에서 다른 기기 로그아웃 → 계정 추가·전환 → 비활성화 → 다시 로그인하면 복구', async ({ page, browser }) => {
+  test.setTimeout(150_000)
+  // 공용 가짜 계정의 비밀번호를 바꾸지 않도록 새 계정을 만든다 (끝나면 삭제 요청)
+  const name = `e2e_ac${Date.now().toString(36)}`
+  const email = `${name}@example.com`
+  const api = await pwRequest.newContext({ baseURL: BASE })
+  await api.get('/api/auth/csrf')
+  await call(api, 'POST', '/api/auth/signup/code', { email })
+  const labCode = async (target: string) =>
+    ((await call<{ target: string; username: string | null; code: string }[]>(api, 'GET', '/api/lab/codes')).find(
+      (c) => c.target === target || c.username === target,
+    )!).code
+  await call(api, 'POST', '/api/auth/signup', {
+    email, fullName: '계정 센터', username: name, password: 'first-pass', birthDate: '1990-03-03', code: await labCode(email),
+  })
+  await api.dispose()
+
+  // 비밀번호 재설정
+  await page.goto('/accounts/login')
+  await page.getByRole('link', { name: '비밀번호를 잊으셨나요?' }).click()
+  await page.getByLabel('사용자 이름 또는 이메일').fill(name)
+  await page.getByRole('button', { name: '코드 보내기' }).click()
+  await expect(page.getByLabel('인증 코드')).toBeVisible()
+  const lab = await pwRequest.newContext({ baseURL: BASE })
+  const codes = (await (await lab.get('/api/lab/codes')).json()) as { username: string | null; code: string }[]
+  await lab.dispose()
+  await page.getByLabel('인증 코드').fill(codes.find((c) => c.username === name)!.code)
+  await page.getByLabel('새 비밀번호').fill('second-pass')
+  await page.getByRole('button', { name: '비밀번호 바꾸기' }).click()
+  await expect(page).toHaveURL(/\/accounts\/login/)
+  await page.getByPlaceholder('사용자 이름 또는 이메일').fill(name)
+  await page.getByPlaceholder('비밀번호').fill('second-pass')
+  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await expect(page).toHaveURL(/\/$/)
+
+  // 다른 기기(새 브라우저)에서도 로그인 → 로그인 활동에서 끊기
+  const phone = await browser.newContext()
+  const phoneApi = phone.request
+  await phoneApi.get(`${BASE}/api/auth/csrf`)
+  const xsrf = (await phone.cookies()).find((c) => c.name === 'XSRF-TOKEN')!.value
+  await phoneApi.post(`${BASE}/api/auth/login`, {
+    data: { login: name, password: 'second-pass' },
+    headers: { 'X-XSRF-TOKEN': decodeURIComponent(xsrf), 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) Mobile Safari/604.1' },
+  })
+  expect((await phoneApi.get(`${BASE}/api/auth/me`)).status()).toBe(200)
+  await page.goto('/accounts/settings')
+  await page.getByRole('link', { name: /로그인 활동/ }).click()
+  await expect(page.getByText('지금 이 기기')).toBeVisible()
+  await page.locator('li').filter({ hasText: 'iOS' }).getByRole('button', { name: '로그아웃' }).click()
+  await expect(page.getByText('그 기기에서 로그아웃시켰습니다')).toBeVisible()
+  expect((await phoneApi.get(`${BASE}/api/auth/me`)).status(), '끊긴 기기는 로그아웃 상태').toBe(204)
+  await phone.close()
+
+  // 계정 추가 → 전환 → 다시 원래 계정으로
+  await page.goto('/accounts/settings')
+  await page.getByRole('button', { name: '계정 전환·추가' }).click()
+  await sheet(page).getByRole('button', { name: /계정 추가/ }).click()
+  await page.getByLabel('추가할 계정', { exact: true }).fill(F.B)
+  await page.getByLabel('추가할 계정 비밀번호').fill('yang1234')
+  await sheet(page).getByRole('button', { name: '로그인' }).click()
+  await expect(page.getByText(`${F.B}(으)로 전환했습니다`)).toBeVisible()
+  await page.goto('/accounts/settings')
+  await page.getByRole('button', { name: '계정 전환·추가' }).click()
+  await sheet(page).getByRole('button', { name: new RegExp(name) }).click()
+  await expect(page.getByText(`${name}(으)로 전환했습니다`)).toBeVisible()
+
+  // 비활성화 → 다른 사람에게 안 보임 → 다시 로그인하면 복구
+  await page.goto('/accounts/remove')
+  await page.getByLabel('비밀번호 확인').fill('second-pass')
+  await page.getByRole('button', { name: '계속' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '비활성화' }).click()
+  await expect(page).toHaveURL(/\/accounts\/login/)
+  expect((await F.asA.fetch(`/api/users/${name}`)).status()).toBe(404)
+  await page.getByPlaceholder('사용자 이름 또는 이메일').fill(name)
+  await page.getByPlaceholder('비밀번호').fill('second-pass')
+  await page.getByRole('button', { name: '로그인', exact: true }).click()
+  await expect(page).toHaveURL(/\/$/)
+  expect((await F.asA.fetch(`/api/users/${name}`)).status()).toBe(200)
+
+  // 정리: 삭제 요청 (30일 뒤 영구 삭제, 그 전에도 다른 사람에게 안 보임)
+  await page.goto('/accounts/remove')
+  await page.getByText('계정 삭제', { exact: true }).click()
+  await page.getByLabel('비밀번호 확인').fill('second-pass')
+  await page.getByRole('button', { name: '계속' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '삭제 요청' }).click()
+  await expect(page).toHaveURL(/\/accounts\/login/)
+  expect((await F.asA.fetch(`/api/users/${name}`)).status()).toBe(404)
+})
+
+// ------------------------------------------------------------------ ④-b 안전·알림 설정
+
+test('안전 설정: 숨겨진 단어 → 다른 사람에게 안 보이고 주인은 숨겨진 댓글로 → 댓글 허용 범위 끄기', async ({ page, browser }) => {
+  const reset = () => call(F.asA, 'PATCH', '/api/me/settings', { hideOffensive: false, hiddenWords: [], commentAudience: 'EVERYONE' })
+  F.cleanups.push(reset)
+  const sc = await createPost(F.asA, 'E2E 숨김 단어 게시물')
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/posts/${sc}`).catch(() => undefined))
+
+  await open(page, F.A, '/accounts/settings')
+  await page.getByRole('link', { name: /숨겨진 단어/ }).click()
+  await page.getByLabel('숨길 단어').fill('이투이금지어')
+  await page.getByRole('button', { name: '저장' }).click()
+  await expect(page.getByText('숨길 단어를 저장했습니다')).toBeVisible()
+
+  const hidden = await call<{ id: number }>(F.asB, 'POST', `/api/posts/${sc}/comments`, { body: '이건 이투이금지어 들어간 댓글' })
+  await call(F.asB, 'POST', `/api/posts/${sc}/comments`, { body: 'E2E 평범한 댓글' })
+  const c = await other(browser, F.C, `/p/${sc}`)
+  await expect(c.page.getByText('E2E 평범한 댓글')).toBeVisible()
+  await expect(c.page.getByText('이건 이투이금지어 들어간 댓글')).toHaveCount(0)
+  await c.close()
+
+  await page.goto(`/p/${sc}`)
+  await expect(page.getByText('이건 이투이금지어 들어간 댓글')).toHaveCount(0)
+  await page.getByRole('button', { name: '숨겨진 댓글 보기 (1)' }).click()
+  await expect(page.getByRole('dialog', { name: '숨겨진 댓글' }).getByText('이건 이투이금지어 들어간 댓글')).toBeVisible()
+  expect(hidden.id).toBeGreaterThan(0)
+  await page.keyboard.press('Escape')
+
+  // 댓글 허용 범위: 아무도 안 됨 → B에게는 입력칸 대신 안내
+  await page.goto('/accounts/comments')
+  await page.getByRole('radio', { name: '아무도 안 됨' }).click()
+  await expect(page.getByRole('radio', { name: '아무도 안 됨' })).toBeChecked()
+  await expect(page.getByText('댓글 허용 범위를 바꿨습니다')).toBeVisible()
+  const b = await other(browser, F.B, `/p/${sc}`)
+  await expect(b.page.getByText('게시물 주인이 댓글을 달 수 있는 사람을 제한했습니다.').filter({ visible: true }).first()).toBeVisible()
+  await expect(b.page.getByRole('textbox', { name: '댓글 달기' })).toHaveCount(0)
+  await b.close()
+})
+
+test('알림·민감 콘텐츠·사용 시간: 일시 중지 → 종류 끄기 → 덜 보기 → 하루 사용 시간 알림 → 수면 모드', async ({ page }) => {
+  F.cleanups.push(() =>
+    call(F.asA, 'PATCH', '/api/me/settings', {
+      notifOff: [], resumeNotifications: true, sensitiveLevel: 'STANDARD', clearDailyLimit: true, sleepOn: false,
+    }),
+  )
+  await open(page, F.A, '/accounts/notifications')
+  await page.getByRole('button', { name: '1시간' }).click()
+  await expect(page.getByText(/까지 일시 중지됨/)).toBeVisible()
+  await page.getByRole('button', { name: '다시 받기' }).click()
+  await expect(page.getByRole('button', { name: '1시간' })).toBeVisible()
+  await page.locator('label').filter({ hasText: '좋아요 (게시물·댓글·스토리)' }).click()
+  await expect.poll(async () => (await call<{ notifOff: string[] }>(F.asA, 'GET', '/api/me/settings')).notifOff).toEqual(['LIKES'])
+
+  await page.goto('/accounts/sensitive')
+  await page.getByRole('radio', { name: /덜 보기/ }).click()
+  await expect(page.getByRole('radio', { name: /덜 보기/ })).toBeChecked()
+  await expect.poll(async () => (await call<{ sensitiveLevel: string }>(F.asA, 'GET', '/api/me/settings')).sensitiveLevel).toBe('LESS')
+
+  // 하루 사용 시간 15분 → 오늘 이미 15분 쓴 것으로 두면 10초 안에 알림
+  await page.goto('/accounts/time')
+  await page.getByRole('button', { name: '15분' }).click()
+  await expect(page.getByRole('button', { name: '15분' })).toHaveAttribute('aria-pressed', 'true')
+  await page.evaluate(() => localStorage.setItem('usage', JSON.stringify({ day: new Date().toLocaleDateString('sv-SE'), ms: 15 * 60_000, shown: false })))
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: '사용 시간 알림' })).toBeVisible({ timeout: 15_000 })
+  await page.getByRole('dialog').getByRole('button', { name: '닫기' }).last().click()
+
+  await page.locator('label').filter({ hasText: '수면 모드' }).click()
+  await expect.poll(async () => (await call<{ sleepOn: boolean }>(F.asA, 'GET', '/api/me/settings')).sleepOn).toBe(true)
+})
+
+test('임시 저장: 게시물 만들기 → 임시 저장 → 목록 → 게시', async ({ page }) => {
+  await open(page, F.A, '/create')
+  await page.locator('input[type="file"]').setInputFiles(solidPng('draft.png', [60, 120, 200], 300, 300))
+  await page.getByRole('button', { name: '다음', exact: true }).click()
+  await page.getByRole('button', { name: '다음', exact: true }).click()
+  await page.getByRole('textbox', { name: '문구' }).fill('E2E 임시 저장 글')
+  await page.getByRole('button', { name: '임시 저장' }).click()
+  await expect(page).toHaveURL(/\/accounts\/drafts/)
+  const row = page.locator('li').filter({ hasText: 'E2E 임시 저장 글' })
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: '게시' }).click()
+  await expect(page).toHaveURL(/\/p\/[\w-]+$/)
+  const sc = page.url().split('/p/')[1]
+  F.cleanups.push(() => call(F.asA, 'DELETE', `/api/posts/${sc}`).catch(() => undefined))
+  await expect(page.getByText('E2E 임시 저장 글').filter({ visible: true }).first()).toBeVisible()
 })
