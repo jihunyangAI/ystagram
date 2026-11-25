@@ -482,6 +482,72 @@ public class PostService {
         return queries.views(List.of(row.id()), viewerId).getFirst();
     }
 
+    /** 프로필 그리드 재배치: 한 칸 앞(earlier=true, 그리드 위쪽)이나 뒤로. 고정·보관·시험 릴스·공동 작업자 글은 제외 */
+    @Transactional
+    public void moveInGrid(String shortcode, long viewerId, boolean towardFront) {
+        PostRow row = getOwn(shortcode, viewerId);
+        Map<String, Object> me = jdbc.queryForMap("select grid_sort, pinned_at, trial from posts where id = :id",
+                Map.of("id", row.id()));
+        if (me.get("pinned_at") != null || isArchived(row.id()) || Boolean.TRUE.equals(me.get("trial"))) {
+            throw ApiException.badRequest("NOT_MOVABLE", "고정했거나 보관한 게시물·시험 릴스는 옮길 수 없습니다.");
+        }
+        List<Map<String, Object>> neighbor = jdbc.queryForList("""
+                select id, grid_sort from posts where author_id = :me and id <> :id and deleted_at is null
+                  and archived_at is null and pinned_at is null and not trial
+                  and (grid_sort, id) %s (cast(:sort as timestamptz), :id)
+                order by grid_sort %s, id %s limit 1
+                """.formatted(towardFront ? ">" : "<", towardFront ? "asc" : "desc", towardFront ? "asc" : "desc"),
+                new MapSqlParameterSource("me", viewerId).addValue("id", row.id()).addValue("sort", me.get("grid_sort")));
+        if (neighbor.isEmpty()) {
+            throw ApiException.badRequest("EDGE", towardFront ? "이미 맨 앞입니다." : "이미 맨 뒤입니다.");
+        }
+        Object mine = me.get("grid_sort");
+        Object theirs = neighbor.getFirst().get("grid_sort");
+        long otherId = ((Number) neighbor.getFirst().get("id")).longValue();
+        if (mine.equals(theirs)) {
+            // 같은 시각이면 1밀리초 차이를 둬서 순서가 확실히 바뀌게
+            Instant t = ((Timestamp) theirs).toInstant();
+            theirs = Timestamp.from(towardFront ? t.plusMillis(1) : t.minusMillis(1));
+        }
+        jdbc.update("update posts set grid_sort = :s where id = :id", Map.of("s", theirs, "id", row.id()));
+        jdbc.update("update posts set grid_sort = :s where id = :id", Map.of("s", mine, "id", otherId));
+    }
+
+    public static final java.time.Duration NOTE_LIFETIME = java.time.Duration.ofDays(3);
+
+    /** 게시물 위 노트 남기기·바꾸기 (맞팔로우만, 60자, 3일) */
+    @Transactional
+    public PostView putNote(String shortcode, long viewerId, String rawBody) {
+        PostRow row = getVisible(shortcode, viewerId);
+        if (row.author().id() == viewerId) throw ApiException.badRequest("OWN_POST", "내 게시물에는 노트를 남길 수 없습니다.");
+        Integer mutual = jdbc.queryForObject("""
+                select count(*) from follows a join follows b on b.follower_id = a.following_id and b.following_id = a.follower_id
+                where a.follower_id = :me and a.following_id = :author and a.status = 'ACCEPTED' and b.status = 'ACCEPTED'
+                """, Map.of("me", viewerId, "author", row.author().id()), Integer.class);
+        if (mutual == null || mutual == 0) {
+            throw ApiException.forbidden("NOT_MUTUAL", "서로 팔로우하는 사람의 게시물에만 노트를 남길 수 있습니다.");
+        }
+        String body = rawBody == null ? "" : rawBody.strip();
+        if (body.isEmpty() || body.codePointCount(0, body.length()) > 60) {
+            throw ApiException.badRequest("BAD_NOTE", "노트는 1~60자로 써 주세요.");
+        }
+        Instant now = Instant.now(clock);
+        jdbc.update("""
+                insert into post_notes (post_id, user_id, body, created_at, expires_at) values (:p, :me, :b, :now, :exp)
+                on conflict (post_id, user_id) do update set body = excluded.body, created_at = excluded.created_at,
+                    expires_at = excluded.expires_at
+                """, new MapSqlParameterSource("p", row.id()).addValue("me", viewerId).addValue("b", body)
+                .addValue("now", Timestamp.from(now)).addValue("exp", Timestamp.from(now.plus(NOTE_LIFETIME))));
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
+    @Transactional
+    public PostView deleteNote(String shortcode, long viewerId) {
+        PostRow row = getVisible(shortcode, viewerId);
+        jdbc.update("delete from post_notes where post_id = :p and user_id = :me", Map.of("p", row.id(), "me", viewerId));
+        return queries.views(List.of(row.id()), viewerId).getFirst();
+    }
+
     private boolean isArchived(long postId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("select archived_at is not null from posts where id = :id",
                 Map.of("id", postId), Boolean.class));

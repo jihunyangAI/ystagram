@@ -801,4 +801,80 @@ class M6IntegrationTest {
             clock.setOffset(java.time.Duration.ZERO);
         }
     }
+
+    // ------------------------------------------------------------ ⑤ 게시물 위 노트·그리드 재배치
+
+    @Test
+    void 맞팔로우만_게시물에_노트를_남기고_맞팔로우에게만_보인다() throws Exception {
+        Map<String, Object> pair = jdbc.queryForMap("""
+                select a.username as a, b.username as b from follows f1
+                join follows f2 on f2.follower_id = f1.following_id and f2.following_id = f1.follower_id
+                join users a on a.id = f1.follower_id join users b on b.id = f1.following_id
+                where f1.status = 'ACCEPTED' and f2.status = 'ACCEPTED' and a.id < b.id and not b.is_private
+                  and exists (select 1 from posts p where p.author_id = b.id and p.deleted_at is null and not p.trial
+                              and not p.subscribers_only)
+                order by a.id, b.id limit 1""");
+        String writer = (String) pair.get("a");
+        String owner = (String) pair.get("b");
+        String code = jdbc.queryForObject("""
+                select p.shortcode from posts p join users u on u.id = p.author_id where u.username = ?
+                  and p.deleted_at is null and not p.trial and not p.subscribers_only order by p.id desc limit 1""",
+                String.class, owner);
+        MockHttpSession w = loginAs(writer);
+        mvc.perform(get("/api/posts/" + code).session(w)).andExpect(jsonPath("$.extras.canNote").value(true));
+        mvc.perform(put("/api/posts/" + code + "/note").session(w).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\":\"" + "가".repeat(61) + "\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(put("/api/posts/" + code + "/note").session(w).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\":\"여기 가 봤어요!\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.extras.notes[0].body").value("여기 가 봤어요!"))
+                .andExpect(jsonPath("$.extras.notes[0].mine").value(true));
+        mvc.perform(get("/api/posts/" + code).session(loginAs(owner)))
+                .andExpect(jsonPath("$.extras.notes[?(@.body == '여기 가 봤어요!')]").isNotEmpty())
+                .andExpect(jsonPath("$.extras.canNote").value(false));
+
+        // 노트 쓴 사람과 맞팔로우가 아닌 사람에게는 안 보이고, 게시물 주인과 맞팔로우가 아니면 남길 수 없다
+        String stranger = jdbc.queryForObject("""
+                select u.username from users u, users w where w.username = ? and u.id <> w.id and not u.is_private
+                  and u.username <> ? and u.birth_date < current_date - interval '18 years'
+                  and not exists (select 1 from follows f where f.follower_id = u.id and f.following_id = w.id)
+                  and not exists (select 1 from follows f where f.follower_id = w.id and f.following_id = u.id)
+                  and not exists (select 1 from follows f where f.follower_id = u.id and f.following_id = (select id from users where username = ?))
+                order by u.id limit 1""", String.class, writer, owner, owner);
+        MockHttpSession x = loginAs(stranger);
+        mvc.perform(get("/api/posts/" + code).session(x))
+                .andExpect(jsonPath("$.extras.notes[?(@.body == '여기 가 봤어요!')]").isEmpty())
+                .andExpect(jsonPath("$.extras.canNote").value(false));
+        mvc.perform(put("/api/posts/" + code + "/note").session(x).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"body\":\"안녕\"}")).andExpect(status().isForbidden());
+
+        // 3일이 지나면 사라진다
+        jdbc.update("update post_notes set expires_at = now() - interval '1 minute'");
+        mvc.perform(get("/api/posts/" + code).session(w)).andExpect(jsonPath("$.extras.notes").isEmpty());
+    }
+
+    @Test
+    void 그리드_재배치는_이웃과_자리를_바꾸고_양_끝에서는_막힌다() throws Exception {
+        String owner = publicAuthor();
+        MockHttpSession me = loginAs(owner);
+        List<String> before = grid(me, owner);
+        String second = before.get(1);
+        mvc.perform(post("/api/posts/" + second + "/grid-move").session(me).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"direction\":\"FRONT\"}")).andExpect(status().isNoContent());
+        List<String> after = grid(me, owner);
+        assertThat(after.get(0)).isEqualTo(second);
+        assertThat(after.get(1)).isEqualTo(before.get(0));
+        assertThat(after.subList(2, after.size())).isEqualTo(before.subList(2, before.size()));
+        mvc.perform(post("/api/posts/" + second + "/grid-move").session(me).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"direction\":\"FRONT\"}")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("EDGE"));
+        // 다른 사람 게시물은 못 옮긴다, 새 글은 맨 앞
+        String other = jdbc.queryForObject("select username from users where username <> ? order by id limit 1", String.class, owner);
+        mvc.perform(post("/api/posts/" + second + "/grid-move").session(loginAs(other)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"direction\":\"BACK\"}")).andExpect(status().isForbidden());
+        MockMultipartFile photo = new MockMultipartFile("files", "a.png", "image/png", png(400, 500));
+        String fresh = JsonPath.read(mvc.perform(multipart("/api/posts").file(photo).file(json("data", "{\"caption\":\"새 글\"}"))
+                .session(me).with(csrf())).andReturn().getResponse().getContentAsString(), "$.shortcode");
+        assertThat(grid(me, owner).getFirst()).isEqualTo(fresh);
+    }
 }

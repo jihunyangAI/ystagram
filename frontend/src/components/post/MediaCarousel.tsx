@@ -74,6 +74,7 @@ export function MediaCarousel({ media, onDoubleTap, fit, className, onIndexChang
 
   return (
     <div
+      data-no-swipe
       className={clsx('relative w-full select-none overflow-hidden bg-black', className)}
       style={fit ? { aspectRatio: String(ratio), maxHeight: '90dvh' } : { aspectRatio: String(ratio) }}
       aria-roledescription="carousel"

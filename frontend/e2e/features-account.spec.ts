@@ -59,7 +59,7 @@ test('구독: 크리에이터 구독(가짜 결제) → 구독자 전용 열림 
     select u.username from users u
     where u.subscription_price is not null and not u.is_private and u.username <> '${F.A}'
       and exists (select 1 from posts p where p.author_id = u.id and p.subscribers_only and p.deleted_at is null)
-      and not exists (select 1 from subscriptions s join users me on me.id = s.subscriber_id where s.creator_id = u.id and me.username = '${F.A}')
+      and not exists (select 1 from subscriptions s join users me on me.id = s.subscriber_id where s.creator_id = u.id and me.username = '${F.A}' and s.status = 'ACTIVE')
     limit 1`)
   F.cleanups.push(() => call(F.asA, 'DELETE', `/api/users/${creator}/subscription`).catch(() => undefined))
   await open(page, F.A, `/${creator}`)

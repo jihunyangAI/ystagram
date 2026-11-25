@@ -21,7 +21,7 @@ export function StoryTray() {
   const open = (username: string) => navigate(`/stories/${username}`, { state: { queue } })
 
   return (
-    <div className="no-scrollbar flex gap-3 overflow-x-auto border-b border-border px-3 py-3 md:mb-2 md:border-b-0 md:px-0" aria-label="스토리">
+    <div className="no-scrollbar flex gap-3 overflow-x-auto border-b border-border px-3 py-3 md:mb-2 md:border-b-0 md:px-0" aria-label="스토리" data-no-swipe>
       <div className="flex w-[70px] shrink-0 flex-col items-center gap-1">
         <div className="relative">
           {mine ? (

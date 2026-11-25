@@ -199,6 +199,10 @@ export interface PostExtras {
   audio: AudioRef | null
   /** 게시물 주인의 댓글 허용 범위에 내가 들어가는지 */
   canComment: boolean
+  /** 게시물 위 노트 (맞팔로우가 남긴 짧은 글, 3일) */
+  notes: { id: number; user: UserSummary; body: string; createdAt: string; mine: boolean }[]
+  /** 내가 노트를 남길 수 있나 (게시물 주인과 맞팔로우) */
+  canNote: boolean
 }
 
 export interface ProductView {

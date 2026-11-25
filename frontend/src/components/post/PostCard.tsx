@@ -9,6 +9,7 @@ import { EditPostModal } from './EditPostModal'
 import { CarouselDots, MediaCarousel } from './MediaCarousel'
 import { Caption, CollabInviteBar, CommentInput, CommentItem, LikesLine, PostActions, PostHeader, PostMenu } from './PostParts'
 import { PostCommerceBar } from '../shop/PostCommerceBar'
+import { PostNoteBubbles } from './PostNotes'
 
 /** 홈 피드의 게시물 카드: 머리 · 사진 · 액션 · 좋아요 · 캡션 · 댓글 미리보기 · 댓글 입력 */
 export function PostCard({ post }: { post: PostView }) {
@@ -49,6 +50,7 @@ export function PostCard({ post }: { post: PostView }) {
       <PostHeader post={post} onMenu={() => setMenu(true)} />
       <CollabInviteBar post={post} />
       <div className="relative">
+        <PostNoteBubbles post={post} />
         <MediaCarousel
           media={post.media}
           tags={post.tags}

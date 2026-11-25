@@ -11,10 +11,30 @@ import type { GridItem } from '../../lib/types'
  * 그리드 칸들 (프로필·리포스트·저장됨·해시태그·장소 공통).
  * variant="reels": 9:16 칸에 조회수 (프로필 릴스 탭)
  */
-export function GridTiles({ items, variant = 'posts' }: { items: GridItem[]; variant?: 'posts' | 'reels' }) {
+export function GridTiles({
+  items,
+  variant = 'posts',
+  onMove,
+}: {
+  items: GridItem[]
+  variant?: 'posts' | 'reels'
+  /** 그리드 순서 바꾸기 모드: 칸마다 ◀ ▶ (고정한 글은 제외) */
+  onMove?: (item: GridItem, direction: 'FRONT' | 'BACK') => void
+}) {
   return (
     <div className="grid grid-cols-3 gap-0.5 md:gap-1">
       {items.map((it) => (
+        <div key={it.shortcode} className="relative">
+        {onMove && !it.pinned && (
+          <div className="absolute inset-x-0 bottom-0 z-10 flex justify-between bg-black/40 p-1">
+            <button aria-label="앞으로" className="rounded bg-white/90 px-2 text-sm font-bold text-black" onClick={() => onMove(it, 'FRONT')}>
+              ◀
+            </button>
+            <button aria-label="뒤로" className="rounded bg-white/90 px-2 text-sm font-bold text-black" onClick={() => onMove(it, 'BACK')}>
+              ▶
+            </button>
+          </div>
+        )}
         <Link
           key={it.shortcode}
           to={it.type === 'REEL' && variant === 'reels' ? `/reels/${it.shortcode}` : `/p/${it.shortcode}`}
@@ -50,6 +70,7 @@ export function GridTiles({ items, variant = 'posts' }: { items: GridItem[]; var
             </span>
           </div>
         </Link>
+        </div>
       ))}
     </div>
   )
@@ -61,11 +82,13 @@ export function InfiniteGrid({
   url,
   empty,
   variant,
+  onMove,
 }: {
   queryKey: unknown[]
   url: string
   empty: ReactNode
   variant?: 'posts' | 'reels'
+  onMove?: (item: GridItem, direction: 'FRONT' | 'BACK') => void
 }) {
   const query = useGrid(queryKey, url)
   const sentinel = useRef<HTMLDivElement>(null)
@@ -99,7 +122,7 @@ export function InfiniteGrid({
 
   return (
     <>
-      <GridTiles items={items} variant={variant} />
+      <GridTiles items={items} variant={variant} onMove={onMove} />
       <div ref={sentinel} className="h-4" />
       {query.isFetchingNextPage && <p className="py-4 text-center text-xs text-muted">불러오는 중…</p>}
     </>

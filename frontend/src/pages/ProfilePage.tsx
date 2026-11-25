@@ -63,6 +63,8 @@ export function ProfilePage() {
   const [list, setList] = useState<ListKind>(null)
   const [opening, setOpening] = useState(false)
   const [menu, setMenu] = useState(false)
+  const [reordering, setReordering] = useState(false)
+  const qcProfile = useQueryClient()
   const relation = useRelationAction()
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ['profile', username],
@@ -293,11 +295,31 @@ export function ProfilePage() {
               </button>
             ))}
           </nav>
+          {tab === 'posts' && profile.me && (
+            <div className="flex justify-end px-3 py-2 md:px-0">
+              <button
+                aria-pressed={reordering}
+                className={clsx('rounded-lg border px-3 py-1 text-xs font-semibold', reordering ? 'border-primary text-primary' : 'border-border')}
+                onClick={() => setReordering((r) => !r)}
+              >
+                {reordering ? '순서 바꾸기 끝' : '그리드 순서 바꾸기'}
+              </button>
+            </div>
+          )}
           {tab === 'posts' && (
             <InfiniteGrid
               queryKey={[user.username]}
               url={`/api/users/${user.username}/posts`}
               empty={<EmptyPosts mine={profile.me} />}
+              onMove={
+                profile.me && reordering
+                  ? (it, direction) =>
+                      api.post<void>(`/api/posts/${it.shortcode}/grid-move`, { direction }).then(
+                        () => qcProfile.invalidateQueries({ queryKey: ['grid', user.username] }),
+                        (e: Error) => toast(e.message),
+                      )
+                  : undefined
+              }
             />
           )}
           {tab === 'reposts' && (

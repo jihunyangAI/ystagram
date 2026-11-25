@@ -10,6 +10,7 @@ import { ResearchBanner } from '../ResearchBanner'
 import { BottomNav, MobileTopBar } from './MobileBars'
 import { Sidebar } from './Sidebar'
 import { UsageReminder } from '../../pages/settings/SafetyPages'
+import { TabSwipe } from './TabSwipe'
 
 /** 로그인한 사용자용 화면 틀. 로그인 안 했으면 로그인 화면으로 보낸다. */
 export function AppLayout() {
@@ -43,6 +44,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-dvh">
+      <TabSwipe username={me.user.username} />
       <RealtimeBridge meId={me.user.id} />
       <UsageReminder />
       <CallManager meId={me.user.id} />

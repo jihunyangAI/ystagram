@@ -22,6 +22,7 @@ import { AudioChip } from '../music/MusicPicker'
 import { ReportModal } from '../report/ReportModal'
 import { RichText } from './RichText'
 import { SaveButton } from './SaveButton'
+import { PostNoteModal } from './PostNotes'
 
 // ------------------------------------------------------------ 머리 (작성자)
 
@@ -734,6 +735,7 @@ export function PostMenu({
   const [adWhy, setAdWhy] = useState(false)
   const [report, setReport] = useState(false)
   const [tagging, setTagging] = useState(false)
+  const [noting, setNoting] = useState(false)
 
   return (
     <>
@@ -788,6 +790,16 @@ export function PostMenu({
             }}
           >
             이 게시물이 표시되는 이유
+          </SheetButton>
+        )}
+        {post.extras.canNote && (
+          <SheetButton
+            onClick={() => {
+              onClose()
+              setNoting(true)
+            }}
+          >
+            {post.extras.notes.some((n) => n.mine) ? '내 노트 바꾸기' : '노트 남기기'}
           </SheetButton>
         )}
         {post.mine ? (
@@ -921,6 +933,7 @@ export function PostMenu({
         <SheetButton onClick={onClose}>취소</SheetButton>
       </Modal>
       {post.ranking && <WhyModal ranking={post.ranking} open={why} onClose={() => setWhy(false)} />}
+      {noting && <PostNoteModal post={post} open={noting} onClose={() => setNoting(false)} />}
       {tagging && (
         <TagProductsModal
           shortcode={post.shortcode}

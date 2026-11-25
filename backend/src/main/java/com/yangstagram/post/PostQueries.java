@@ -240,7 +240,7 @@ public class PostQueries {
                         + "select 1 from post_collaborators pc where pc.post_id = p.id and pc.user_id = :author "
                         + "and pc.status = 'ACCEPTED')) and not (p.author_id = :author and p.pinned_at is not null) and"
                         + NOT_TRIAL,
-                "p.created_at", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
+                "p.grid_sort", new MapSqlParameterSource("author", authorId), viewerId, cursor, limit);
         if (cursor != null) return rest;
         List<GridItem> pinned = jdbc.query("""
                 select p.id, p.shortcode, p.like_count, p.comment_count, p.hide_like_count, p.author_id,
@@ -546,6 +546,29 @@ public class PostQueries {
             };
             canComment.put(rs.getLong("id"), ok);
         });
+        // 게시물 위 노트: 게시물 주인에게는 모두, 다른 사람에게는 맞팔로우인 사람이 남긴 것만 (3일)
+        p.addValue("noteNow", Timestamp.from(Instant.now(clock)));
+        Map<Long, List<com.yangstagram.post.dto.PostDtos.PostNoteView>> notes = new HashMap<>();
+        jdbc.query("""
+                select n.id, n.post_id, n.body, n.created_at, n.user_id, %s
+                from post_notes n join posts np on np.id = n.post_id join users u on u.id = n.user_id
+                where n.post_id in (:ids) and n.expires_at > :noteNow and u.deleted_at is null
+                  and (np.author_id = :me or n.user_id = :me or (
+                       exists (select 1 from follows a where a.follower_id = :me and a.following_id = n.user_id and a.status = 'ACCEPTED')
+                       and exists (select 1 from follows b where b.follower_id = n.user_id and b.following_id = :me and b.status = 'ACCEPTED')))
+                order by n.created_at desc
+                """.formatted(UserRows.cols("u")), p, rs -> {
+            List<com.yangstagram.post.dto.PostDtos.PostNoteView> list = notes.computeIfAbsent(rs.getLong("post_id"), k -> new ArrayList<>());
+            if (list.size() < 5) {
+                list.add(new com.yangstagram.post.dto.PostDtos.PostNoteView(rs.getLong("id"), UserRows.read(rs, "u"), rs.getString("body"),
+                        rs.getTimestamp("created_at").toInstant(), rs.getLong("user_id") == viewerId));
+            }
+        });
+        Set<Long> canNote = idSet("""
+                select p.id from posts p where p.id in (:ids) and p.author_id <> :me
+                  and exists (select 1 from follows a where a.follower_id = :me and a.following_id = p.author_id and a.status = 'ACCEPTED')
+                  and exists (select 1 from follows b where b.follower_id = p.author_id and b.following_id = :me and b.status = 'ACCEPTED')
+                """, p);
         Map<Long, boolean[]> states = new HashMap<>();
         jdbc.query("select id, archived_at is not null, pinned_at is not null from posts where id in (:ids)", p, rs -> {
             states.put(rs.getLong(1), new boolean[] {rs.getBoolean(2), rs.getBoolean(3)});
@@ -602,7 +625,8 @@ public class PostQueries {
                     products.getOrDefault(id, List.of()), exclusive.getOrDefault(id, false),
                     mine ? gifts.getOrDefault(id, 0L) : null,
                     mine && states.getOrDefault(id, new boolean[2])[0], mine && states.getOrDefault(id, new boolean[2])[1],
-                    audios.get(id), canComment.getOrDefault(id, true)));
+                    audios.get(id), canComment.getOrDefault(id, true), notes.getOrDefault(id, List.of()),
+                    canNote.contains(id)));
         }
         return result;
     }

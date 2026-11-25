@@ -363,3 +363,75 @@ test('임시 저장: 게시물 만들기 → 임시 저장 → 목록 → 게시
   F.cleanups.push(() => call(F.asA, 'DELETE', `/api/posts/${sc}`).catch(() => undefined))
   await expect(page.getByText('E2E 임시 저장 글').filter({ visible: true }).first()).toBeVisible()
 })
+
+// ------------------------------------------------------------------ ⑤ 게시물 위 노트·그리드 재배치·탭 스와이프
+
+test('게시물 위 노트: 맞팔로우가 노트를 남기면 사진 위에 보이고 게시물 주인도 본다', async ({ page, browser }) => {
+  // A·B를 서로 팔로우하게 (원래 안 하던 쪽만 끝나고 되돌림)
+  for (const [me, them, ctx] of [[F.A, F.B, F.asA], [F.B, F.A, F.asB]] as const) {
+    const p = await call<{ relationship: string }>(ctx, 'GET', `/api/users/${them}`)
+    if (p.relationship !== 'FOLLOWING') {
+      await call(ctx, 'PUT', `/api/users/${them}/follow`)
+      F.cleanups.push(() => call(ctx, 'DELETE', `/api/users/${them}/follow`).catch(() => undefined))
+    }
+    expect(me).toBeTruthy()
+  }
+  const sc = await createPost(F.asB, 'E2E 노트 받을 게시물')
+  F.cleanups.push(() => call(F.asB, 'DELETE', `/api/posts/${sc}`).catch(() => undefined))
+
+  await open(page, F.A, `/p/${sc}`)
+  await menu(page, '노트 남기기')
+  await page.getByLabel('노트 내용').fill('E2E 여기 꼭 가 볼게요')
+  await page.getByRole('dialog').getByRole('button', { name: '노트 남기기' }).click()
+  await expect(page.getByText(/노트를 남겼습니다/)).toBeVisible()
+  await expect(page.getByLabel('게시물 노트').filter({ visible: true }).first()).toContainText('E2E 여기 꼭 가 볼게요')
+
+  const b = await other(browser, F.B, `/p/${sc}`)
+  await expect(b.page.getByLabel('게시물 노트').filter({ visible: true }).first()).toContainText(F.A)
+  await b.close()
+})
+
+test('그리드 재배치: 내 프로필에서 두 번째 칸을 앞으로', async ({ page }) => {
+  await open(page, F.A, `/${F.A}`)
+  const tiles = page.locator('a[href^="/p/"], a[href^="/reels/"]')
+  await expect(tiles.nth(1)).toBeVisible()
+  const firstBefore = await tiles.nth(0).getAttribute('href')
+  const second = (await tiles.nth(1).getAttribute('href'))!
+  const sc = second.split('/').pop()!
+  F.cleanups.push(() => call(F.asA, 'POST', `/api/posts/${sc}/grid-move`, { direction: 'BACK' }).catch(() => undefined))
+  await page.getByRole('button', { name: '그리드 순서 바꾸기' }).click()
+  await page.getByRole('button', { name: '앞으로' }).nth(1).click()
+  await expect(tiles.nth(0)).toHaveAttribute('href', second)
+  await expect(tiles.nth(1)).toHaveAttribute('href', firstBefore!)
+  await page.getByRole('button', { name: '순서 바꾸기 끝' }).click()
+  await expect(page.getByRole('button', { name: '앞으로' })).toHaveCount(0)
+})
+
+test.describe('모바일', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+
+  test('탭 간 좌우 스와이프: 홈 → 릴스 → 홈, 사진 넘기기 위에서는 탭이 안 바뀐다', async ({ page }) => {
+    const swipe = async (fromX: number, toX: number, y = 420, selector?: string) =>
+      page.evaluate(
+        ({ fromX, toX, y, selector }) => {
+          const target = (selector ? document.querySelector(selector) : document.elementFromPoint(fromX, y)) ?? document.body
+          const touch = (x: number) => new Touch({ identifier: 1, target, clientX: x, clientY: y })
+          target.dispatchEvent(new TouchEvent('touchstart', { touches: [touch(fromX)], changedTouches: [touch(fromX)], bubbles: true }))
+          target.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch(toX)], bubbles: true }))
+        },
+        { fromX, toX, y, selector },
+      )
+    await open(page, F.A, '/')
+    await expect(page.locator('article').first()).toBeVisible()
+    await swipe(320, 80, 300, 'main')
+    await expect(page).toHaveURL(/\/reels$/)
+    await page.waitForTimeout(600)
+    await swipe(80, 320, 300, 'main')
+    await expect(page).toHaveURL(/\/$/)
+    // 사진 넘기기(캐러셀) 위에서 시작한 손짓은 무시
+    await page.waitForTimeout(600)
+    await swipe(320, 80, 300, '[data-no-swipe]')
+    await page.waitForTimeout(400)
+    await expect(page).toHaveURL(/\/$/)
+  })
+})

@@ -14,6 +14,7 @@ import type { PostView } from '../../lib/types'
 import { NotFoundPage } from '../NotFoundPage'
 import { PostCommerceBar } from '../../components/shop/PostCommerceBar'
 import { HiddenCommentsButton } from '../settings/SafetyPages'
+import { PostNoteBubbles } from '../../components/post/PostNotes'
 
 /**
  * 게시물 상세 (/p/:shortcode).
@@ -95,7 +96,8 @@ function PostDetail({ post }: { post: PostView }) {
       <div className="md:hidden">
         <PostHeader post={post} onMenu={() => setMenu(true)} />
       </div>
-      <div className="flex items-center bg-black md:w-[58%] md:shrink-0">
+      <div className="relative flex items-center bg-black md:w-[58%] md:shrink-0">
+        <PostNoteBubbles post={post} />
         <MediaCarousel
           media={post.media}
           tags={post.tags}

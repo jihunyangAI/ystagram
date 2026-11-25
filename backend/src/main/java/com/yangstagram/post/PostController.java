@@ -179,6 +179,29 @@ public class PostController {
         return commentService.hidden(shortcode, CurrentUser.requireId());
     }
 
+    public record GridMove(String direction) {
+    }
+
+    /** 프로필 그리드 재배치: direction = FRONT(앞으로) / BACK(뒤로) */
+    @PostMapping("/posts/{shortcode}/grid-move")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void gridMove(@PathVariable String shortcode, @RequestBody GridMove req) {
+        postService.moveInGrid(shortcode, CurrentUser.requireId(), !"BACK".equalsIgnoreCase(req.direction()));
+    }
+
+    public record NoteBody(String body) {
+    }
+
+    @PutMapping("/posts/{shortcode}/note")
+    public PostView putNote(@PathVariable String shortcode, @RequestBody NoteBody req) {
+        return postService.putNote(shortcode, CurrentUser.requireId(), req.body());
+    }
+
+    @DeleteMapping("/posts/{shortcode}/note")
+    public PostView deleteNote(@PathVariable String shortcode) {
+        return postService.deleteNote(shortcode, CurrentUser.requireId());
+    }
+
     @PostMapping("/posts/{shortcode}/restore")
     public PostView restore(@PathVariable String shortcode) {
         return postService.restore(shortcode, CurrentUser.requireId());

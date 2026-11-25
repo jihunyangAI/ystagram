@@ -93,8 +93,14 @@ public final class PostDtos {
      */
     public record Extras(RemixRef remixOf, int remixCount, boolean allowRemix, List<ProductTag> products,
                          boolean subscribersOnly, Long giftStars, boolean archived, boolean pinned,
-                         com.yangstagram.audio.AudioService.AudioRef audio, boolean canComment) {
-        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false, null, true);
+                         com.yangstagram.audio.AudioService.AudioRef audio, boolean canComment,
+                         List<PostNoteView> notes, boolean canNote) {
+        public static final Extras NONE = new Extras(null, 0, true, List.of(), false, null, false, false, null, true,
+                List.of(), false);
+    }
+
+    /** 게시물 위 노트: 맞팔로우가 남긴 짧은 글 (3일) */
+    public record PostNoteView(long id, UserSummary user, String body, Instant createdAt, boolean mine) {
     }
 
     /** @param available 원본이 지워졌거나 볼 수 없으면 false (영상 주소 없음) */
