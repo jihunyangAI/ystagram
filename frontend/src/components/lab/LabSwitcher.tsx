@@ -42,7 +42,8 @@ export function LabSwitcher() {
         className={`fixed z-40 flex h-11 items-center justify-center bg-primary text-white shadow-lg hover:bg-primary-hover ${
           // DM·스토리·릴스는 화면 구석마다 버튼이 있어서, 모바일에서는 왼쪽 가장자리의 작은 탭으로(데스크톱은 오른쪽 위).
           // Lab은 데스크톱에서만 위로(결과 표를 가리지 않게)
-          ['/direct', '/stories', '/reels'].some((p) => pathname.startsWith(p))
+          // 화면 아래에 버튼이 있거나 꽉 찬 화면은 왼쪽 가장자리의 얇은 탭으로 (만들기 화면의 "레이아웃"·"공유" 버튼을 가리지 않게)
+          ['/direct', '/stories', '/reels', '/create'].some((p) => pathname.startsWith(p))
             ? 'top-1/2 left-0 w-6 -translate-y-1/2 rounded-r-full opacity-70 hover:opacity-100 md:top-12 md:right-4 md:left-auto md:w-11 md:translate-y-0 md:rounded-full md:opacity-100'
             : pathname.startsWith('/lab')
               ? 'right-4 bottom-20 w-11 rounded-full md:top-12 md:bottom-auto'

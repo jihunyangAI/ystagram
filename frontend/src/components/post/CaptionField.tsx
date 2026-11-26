@@ -57,7 +57,7 @@ export function Toggle({ checked, onChange, label, help }: { checked: boolean; o
       </span>
       <span className="relative mt-0.5 inline-flex shrink-0">
         <input type="checkbox" role="switch" className="peer sr-only" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-        <span className="h-6 w-10 rounded-full bg-border transition-colors peer-checked:bg-text peer-focus-visible:outline-2 peer-focus-visible:outline-primary" />
+        <span className="h-6 w-10 rounded-full bg-muted/45 transition-colors peer-checked:bg-primary peer-focus-visible:outline-2 peer-focus-visible:outline-primary" />
         <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
       </span>
     </label>

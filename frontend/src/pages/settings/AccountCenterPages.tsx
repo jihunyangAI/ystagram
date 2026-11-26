@@ -58,15 +58,29 @@ export function LoginActivityPage() {
   const [all, setAll] = useState(false)
   const refresh = () => qc.invalidateQueries({ queryKey: ['login-sessions'] })
   const others = (data ?? []).filter((s) => !s.current)
+  // 기록이 많으면(Lab 계정 전환·테스트마다 하나씩 쌓인다) 처음엔 최근 5곳만
+  const [expanded, setExpanded] = useState(false)
+  const SHOWN = 6
+  const rows = expanded ? (data ?? []) : (data ?? []).slice(0, SHOWN)
   return (
     <div className="mx-auto max-w-[600px] pb-8">
       <Header title="로그인 활동" />
       <p className="px-4 pb-3 text-sm text-muted">
         지금 로그인되어 있는 곳입니다. 모르는 곳이 있으면 로그아웃시키고 비밀번호를 바꾸세요.
       </p>
+      {others.length > 0 && (
+        <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-sm">
+          <span>
+            이 기기 말고 <b>{others.length}곳</b>에 로그인되어 있습니다
+          </span>
+          <button className="shrink-0 font-semibold text-danger" onClick={() => setAll(true)}>
+            모두 로그아웃
+          </button>
+        </div>
+      )}
       {isLoading && <p className="p-6 text-center text-sm text-muted">불러오는 중…</p>}
       <ul>
-        {data?.map((s) => {
+        {rows.map((s) => {
           const d = deviceLabel(s.userAgent)
           return (
             <li key={s.id} className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -74,7 +88,7 @@ export function LoginActivityPage() {
               <div className="min-w-0 flex-1 text-sm">
                 <p className="font-semibold">{d.label}</p>
                 <p className="text-xs text-muted">
-                  {s.current ? <span className="font-semibold text-[#1fc25b]">지금 이 기기</span> : `${timeAgo(s.lastSeenAt, 'long')} 활동`}
+                  {s.current ? <span className="font-semibold text-primary">지금 이 기기</span> : `${timeAgo(s.lastSeenAt, 'long')} 활동`}
                   {' · '}
                   {METHOD[s.method] ?? s.method}로 로그인 · {new Date(s.createdAt).toLocaleDateString('ko-KR')}
                   {s.ip && ` · ${s.ip}`}
@@ -100,9 +114,9 @@ export function LoginActivityPage() {
           )
         })}
       </ul>
-      {others.length > 0 && (
-        <button className="mx-4 mt-4 text-sm font-semibold text-danger" onClick={() => setAll(true)}>
-          이 기기만 남기고 모두 로그아웃
+      {!expanded && (data?.length ?? 0) > SHOWN && (
+        <button className="mx-4 mt-3 text-sm font-semibold text-primary" onClick={() => setExpanded(true)}>
+          {(data?.length ?? 0) - SHOWN}곳 더 보기
         </button>
       )}
       <ConfirmModal
