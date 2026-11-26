@@ -47,9 +47,13 @@ public class Recommendations {
             and %2$s and %3$s
             """.formatted(FOLLOWEES, PostQueries.VISIBLE, RelationSql.postsNotMuted("p.author_id"));
 
-    /** 홈 추천: 팔로우하지 않는 공개 계정, 추천 허용 게시물 */
+    /**
+     * 홈 추천: 팔로우하지 않는 공개 계정, 추천 허용 게시물, 최근 30일 것만.
+     * 기간 제한이 없으면 매 요청 추천 후보 전부(large 약 4천 개)에 점수를 매겨 게시물이 쌓일수록 느려진다.
+     */
     static final String HOME_SUGGESTED = """
             p.author_id <> :me and not a.is_private and p.recommendable and not p.trial and not p.subscribers_only
+            and p.created_at > cast(:now as timestamptz) - interval '30 days'
             and %4$s
             and p.author_id not in %1$s
             and not exists (select 1 from reposts r where r.post_id = p.id and r.user_id in %1$s)
@@ -274,7 +278,19 @@ public class Recommendations {
 
         List<Long> ids = merged.stream().map(Scored::postId).toList();
         Map<Long, Repost> reposts = queries.followeeReposts(me, ids);
-        List<PostView> views = queries.views(ids, me, reposts);
+
+        // 광고를 먼저 골라 본문 게시물과 함께 한 번에 화면용으로 만든다
+        // (views는 작은 쿼리 약 20개라, 두 번 부르면 DB 왕복만으로 large 홈 피드가 50ms 늘었다)
+        int adCount = flags.get().ads();
+        List<AdService.Picked> picked = adCount > 0 && ids.size() >= 3
+                ? ads.pick(me, topics, since, adCount, aOff, ids) : List.of();
+        List<Long> adIds = picked.stream().map(AdService.Picked::postId).toList();
+        List<Long> all = new ArrayList<>(ids);
+        all.addAll(adIds);
+        Set<Long> adIdSet = Set.copyOf(adIds);
+        List<PostView> allViews = queries.views(all, me, reposts);
+        List<PostView> views = allViews.stream().filter(v -> !adIdSet.contains(v.id())).toList();
+        List<PostView> adViews = allViews.stream().filter(v -> adIdSet.contains(v.id())).toList();
         Map<Long, Scored> byId = merged.stream().collect(Collectors.toMap(Scored::postId, s -> s, (a, b) -> a));
         List<PostView> items = new ArrayList<>();
         int rank = fOff + sOff;
@@ -286,11 +302,8 @@ public class Recommendations {
         }
 
         // 광고 끼우기
-        int adCount = flags.get().ads();
         int adsShown = 0;
-        if (adCount > 0 && items.size() >= 3) {
-            List<AdService.Picked> picked = ads.pick(me, topics, since, adCount, aOff, ids);
-            List<PostView> adViews = queries.views(picked.stream().map(AdService.Picked::postId).toList(), me);
+        if (!adViews.isEmpty() && items.size() >= 3) {
             Map<Long, PostDtos.AdInfo> info = picked.stream()
                     .collect(Collectors.toMap(AdService.Picked::postId, AdService.Picked::info));
             List<Integer> slots = AdService.slots(items.size(), adViews.size());
