@@ -3,11 +3,13 @@ import { expect, request as pwRequest } from '@playwright/test'
 import type { APIRequestContext, Browser, Page } from '@playwright/test'
 import { deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 export const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:5173'
 export const PASSWORD = 'yang1234'
+/** 속도 점검용: 지정하면 watch()가 API 응답 시간을 이 파일(JSON 줄)에 적는다 */
+const TIMINGS = process.env.E2E_TIMINGS
 
 /** 세션 쿠키 + CSRF를 갖춘 API 호출기 (브라우저 없이 준비·정리용) */
 export async function apiAs(username: string): Promise<APIRequestContext> {
@@ -197,6 +199,12 @@ export function watch(page: Page, label = ''): Watch {
     const url = r.url()
     if (!url.includes('/api/') && !url.includes('/media/')) return
     const s = r.status()
+    if (TIMINGS && url.includes('/api/')) {
+      // 속도 점검: 요청을 보낸 때부터 응답 머리가 올 때까지 (서버 처리 시간에 가깝다)
+      const t = r.request().timing()
+      const path = url.replace(/^https?:\/\/[^/]+/, '')
+      appendFileSync(TIMINGS, JSON.stringify({ m: r.request().method(), path, s, ms: Math.round(t.responseStart) }) + '\n')
+    }
     if (s >= 500) w.errors.push(tag(`${r.request().method()} ${url.replace(BASE, '')} → ${s}`))
     else if (s >= 400 && r.request().method() === 'GET' && s !== 401) w.warnings.push(tag(`GET ${url.replace(BASE, '')} → ${s}`))
   })
@@ -210,7 +218,7 @@ export function expectClean(w: Watch) {
 
 /** 테스트 대상을 고를 때만 쓰는 읽기 전용 SQL (개발 DB 컨테이너) */
 export function sql(query: string): string[][] {
-  const out = execFileSync('docker', ['exec', 'yangstagram-postgres', 'psql', '-U', 'yangstagram', '-d', 'yangstagram', '-tA', '-F', '\t', '-c', query], {
+  const out = execFileSync('docker', ['exec', 'yangstagram-postgres', 'psql', '-U', 'yangstagram', '-d', process.env.E2E_DB ?? 'yangstagram', '-tA', '-F', '\t', '-c', query], {
     encoding: 'utf8',
   })
   return out
