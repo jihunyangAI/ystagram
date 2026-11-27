@@ -12,7 +12,8 @@ services:
       POSTGRES_USER: yangstagram
       POSTGRES_PASSWORD: yangstagram
     ports:
-      - "5433:5432"
+      # 이 PC 안에서만 접속 (노트북이 공인 IP라 모든 주소로 열면 인터넷에서 DB에 접속할 수 있다)
+      - "127.0.0.1:5433:5432"
     volumes:
       - yangstagram-pgdata:/var/lib/postgresql
 
