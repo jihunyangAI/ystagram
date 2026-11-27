@@ -16,7 +16,8 @@ if (!URL_ || !KEY) {
   console.error('SUPABASE_URL, SUPABASE_KEY 환경 변수가 필요합니다')
   process.exit(1)
 }
-const auth = { Authorization: `Bearer ${KEY}`, apikey: KEY }
+// 새 형식 비밀 키(sb_secret_…)는 apikey 머리글로만, 예전 service_role 키(JWT)는 둘 다
+const auth = KEY.startsWith('sb_') ? { apikey: KEY } : { Authorization: `Bearer ${KEY}`, apikey: KEY }
 const TYPES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.mp4': 'video/mp4' }
 
 async function ensureBucket() {

@@ -25,9 +25,11 @@ public class RemoteMedia {
 
     /** @param key 버킷 안의 경로 (예: u/2026/11/abc.jpg) */
     public void upload(String key, HttpRequest.BodyPublisher body, String contentType) {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(remote.uploadBase() + key))
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(remote.uploadBase() + key));
+        // 새 형식 비밀 키(sb_secret_…)는 JWT가 아니라 apikey 머리글로만, 예전 service_role 키(JWT)는 둘 다
+        if (!remote.key().startsWith("sb_")) b.header("Authorization", "Bearer " + remote.key());
+        HttpRequest req = b
                 .timeout(Duration.ofMinutes(5))
-                .header("Authorization", "Bearer " + remote.key())
                 .header("apikey", remote.key())
                 .header("Content-Type", contentType)
                 .header("Cache-Control", "max-age=2592000")
