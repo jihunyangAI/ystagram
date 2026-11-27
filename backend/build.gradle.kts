@@ -15,6 +15,8 @@ java {
 }
 
 repositories {
+	// 배포 빌드(Render)는 공용 IP라 Maven Central이 429(요청 과다)로 막을 때가 있어 Google 미러를 먼저 쓴다
+	maven("https://maven-central.storage-download.googleapis.com/maven2/")
 	mavenCentral()
 }
 

@@ -14,9 +14,10 @@ FROM eclipse-temurin:25-jdk AS api
 WORKDIR /src
 COPY backend/gradlew backend/settings.gradle.kts backend/build.gradle.kts backend/gradle.properties ./
 COPY backend/gradle ./gradle
-RUN sh ./gradlew --no-daemon dependencies > /dev/null
 COPY backend/src ./src
-RUN sh ./gradlew --no-daemon bootJar -x test && cp build/libs/*-SNAPSHOT.jar /app.jar
+# 라이브러리 저장소가 잠깐 막히면(429) 잠시 뒤 다시 시도
+RUN for i in 1 2 3; do sh ./gradlew --no-daemon bootJar -x test && break; echo "다시 시도 $i"; sleep 20; done \
+    && cp build/libs/*-SNAPSHOT.jar /app.jar
 
 # 3) 실행
 FROM eclipse-temurin:25-jre
