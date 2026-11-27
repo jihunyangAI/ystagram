@@ -1,0 +1,47 @@
+# 배포용 설정 (Render + Neon + Supabase Storage). 실행할 때 SPRING_PROFILES_ACTIVE=prod
+# 비밀 값은 여기 적지 않고 환경 변수로 준다:
+#   SPRING_DATASOURCE_URL       jdbc:postgresql://<Neon 주소>/<DB>?sslmode=require
+#   SPRING_DATASOURCE_USERNAME  / SPRING_DATASOURCE_PASSWORD
+#   YANGSTAGRAM_MEDIA_REMOTE_URL  https://<프로젝트>.supabase.co
+#   YANGSTAGRAM_MEDIA_REMOTE_KEY  Supabase 비밀 키 (service_role / secret)
+#   YANGSTAGRAM_PUBLIC_ORIGIN     https://ystagram.onrender.com
+spring:
+  docker:
+    compose:
+      enabled: false
+  datasource:
+    hikari:
+      # 무료 DB·작은 서버: 연결 수를 적게
+      maximum-pool-size: 5
+      minimum-idle: 1
+  servlet:
+    multipart:
+      # Supabase 무료 저장소는 파일 하나 50MB까지
+      max-file-size: 50MB
+      max-request-size: 60MB
+
+server:
+  address: 0.0.0.0
+  port: ${PORT:8080}
+  # Render 앞단(https)이 넘겨 준 주소·프로토콜을 믿는다 → 보안 쿠키·리다이렉트가 https로
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+# 서버 디스크는 다시 켜질 때 지워지므로 파일 로그는 남기지 않는다 (콘솔만)
+logging:
+  file:
+    name: ""
+
+yangstagram:
+  web-dir: /app/web
+  public-origin: ${YANGSTAGRAM_PUBLIC_ORIGIN:}
+  seed:
+    # 첫 시드는 노트북에서 넣는다 (512MB 서버에서 시드를 만들면 메모리가 빠듯함)
+    on-startup-if-empty: false
+  media:
+    storage-dir: /tmp/storage
+    # 사진 목록(manifest.json)만 이미지에 넣는다. 사진 파일은 Supabase에 있다
+    seed-dir: /app/seed/photos

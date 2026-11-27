@@ -26,11 +26,17 @@ import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
+    /** 배포 주소 (예: https://ystagram.onrender.com). 비어 있으면 로컬 주소만 */
+    @org.springframework.beans.factory.annotation.Value("${yangstagram.public-origin:}")
+    private String publicOrigin;
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        java.util.List<String> origins = new java.util.ArrayList<>(java.util.List.of("http://localhost:[*]", "http://127.0.0.1:[*]"));
+        if (!publicOrigin.isBlank()) origins.add(publicOrigin);
         registry.addEndpoint("/ws")
-                // 다른 사이트가 로그인 쿠키를 이용해 연결하지 못하도록 로컬 주소만 허용
-                .setAllowedOriginPatterns("http://localhost:[*]", "http://127.0.0.1:[*]")
+                // 다른 사이트가 로그인 쿠키를 이용해 연결하지 못하도록 이 사이트 주소만 허용
+                .setAllowedOriginPatterns(origins.toArray(String[]::new))
                 .setHandshakeHandler(new DefaultHandshakeHandler() {
                     @Override
                     protected Principal determineUser(ServerHttpRequest request, WebSocketHandler handler,

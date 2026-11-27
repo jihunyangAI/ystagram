@@ -1,0 +1,24 @@
+# Render 배포 설정 (Blueprint). Render 대시보드 → New → Blueprint → 이 저장소를 고르면 아래대로 만든다.
+# sync: false 값은 처음 만들 때 대시보드에서 직접 넣는다 (Git에 비밀 값을 남기지 않음).
+services:
+  - type: web
+    name: ystagram
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/auth/csrf
+    autoDeploy: true
+    envVars:
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: YANGSTAGRAM_MEDIA_REMOTE_URL
+        sync: false
+      - key: YANGSTAGRAM_MEDIA_REMOTE_KEY
+        sync: false
+      - key: YANGSTAGRAM_PUBLIC_ORIGIN
+        value: https://ystagram.onrender.com

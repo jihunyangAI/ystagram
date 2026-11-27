@@ -80,7 +80,10 @@ export function SignupPage() {
       <div className="mb-4 flex flex-col items-center gap-3 text-center">
         <Logo className="scale-125" />
         <p className="font-semibold text-muted">친구들의 사진과 동영상을 보려면 가입하세요.</p>
-        <p className="text-xs text-muted">연구용 서비스입니다. 실제 개인정보를 입력하지 마세요.</p>
+        <p className="text-xs text-muted">
+          연구용 테스트 사이트입니다. Lab에서 누구나 다른 계정으로 들어갈 수 있고 데이터가 초기화될 수 있으니, 실제
+          이메일·비밀번호·사진은 쓰지 마세요.
+        </p>
       </div>
 
       <form onSubmit={submit} className="space-y-2" noValidate>

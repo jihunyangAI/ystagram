@@ -1,0 +1,14 @@
+**/node_modules
+frontend/dist
+frontend/e2e
+frontend/test-results
+frontend/playwright-report
+backend/build
+backend/.gradle
+storage
+seed-media
+reference
+.git
+.playwright-mcp
+*.md
+!deploy/**
