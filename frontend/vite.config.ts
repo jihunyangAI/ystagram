@@ -30,9 +30,24 @@ function phoneGuard(key: string): Plugin {
           return
         }
         if ((req.headers.cookie ?? '').split(/;\s*/).includes(cookie)) return next()
+        // 왜 막혔는지 화면 서버 출력에 남긴다 (키는 남기지 않음)
+        const given = url.searchParams.get('key')
+        console.log(
+          `[phone-guard] 403 ${req.method} ${url.pathname} key=${given == null ? '없음' : `틀림(${given.length}자)`} ` +
+            `cookie=${req.headers.cookie ? req.headers.cookie.split(/;\s*/).map((c) => c.split('=')[0]).join(',') : '없음'} ` +
+            `ua=${(req.headers['user-agent'] ?? '').slice(0, 90)}`,
+        )
         res.statusCode = 403
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-        res.end('접속 키가 필요합니다')
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store')
+        // 키를 직접 넣을 수 있는 작은 화면 (링크가 잘렸거나 다른 브라우저로 열렸을 때)
+        res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>접속 키</title><body style="font-family:system-ui,sans-serif;max-width:360px;margin:15vh auto;padding:0 16px">
+<h2 style="font-size:18px">접속 키가 필요합니다</h2>
+<p style="color:#666;font-size:14px">받은 링크 전체(<b>?key=</b>까지)를 그대로 열거나, 키를 아래에 붙여 넣으세요.</p>
+<form method="get" action="${url.pathname}"><input name="key" autocomplete="off" autocapitalize="off" spellcheck="false"
+ style="width:100%;box-sizing:border-box;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px" placeholder="접속 키">
+<button style="margin-top:10px;width:100%;padding:10px;font-size:16px;border:0;border-radius:8px;background:#1f8a70;color:#fff">들어가기</button></form>`)
       })
     },
   }
